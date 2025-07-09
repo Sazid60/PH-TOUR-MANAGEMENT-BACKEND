@@ -1,3 +1,9 @@
+# PH-TOUR-MANAGEMENT-BACKEND-1
+## 26-1 Create User interface
+
+- User Interface Added `user.interface.ts`
+
+```ts 
 import { Types } from "mongoose"
 
 export enum Role {
@@ -36,3 +42,6 @@ export interface IUser {
 
 
 }
+```
+
+## 26-2 Create User model
