@@ -468,3 +468,54 @@ throw new Error("Mammah ! Error From Regular Error")
 throw new AppError(httpStatus.BAD_REQUEST, "Mammah ! Error From custom AppError")
 
 ```
+
+## 26-8 Create Not Found Route
+- This must be bellow the global error handler. 
+- middlewares - > notFound.ts 
+
+```ts 
+import { Request, Response } from "express";
+import httpStatus from 'http-status-codes';
+
+const notFound = (req: Request, res: Response) => {
+    res.status(httpStatus.NOT_FOUND).json({
+        success: false,
+        message: "Route Not Found"
+    })
+}
+
+export default notFound
+```
+
+- app.ts 
+
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
+import notFound from "./app/middlewares/notFound"
+
+const app = express()
+app.use(express.json())
+app.use(cors())
+
+app.use("/api/v1", router)
+
+// using the global error handler 
+app.use(globalErrorHandler)
+
+// Using not found route 
+app.use(notFound)
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+export default app
+```
