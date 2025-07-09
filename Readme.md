@@ -228,3 +228,56 @@ app.get("/", (req: Request, res: Response) => {
 
 export default app
 ```
+
+## 26-5 Split User Controller and Make Service Layer
+- Controller controls request and responses
+- We have to separate the database related works to service layer. 
+- database related works should not be done inside controller. It should just handle the request and response
+- So, database related works/business logics should be in service layer.   
+- The Flow is like `Request -> Route -> Controller -> Service -> model -> DB -> service -> controller -> Response`
+
+- user.service.ts 
+
+```ts
+import { IUser } from "./user.interface";
+import { User } from "./user.model";
+
+const createUser = async (payload: Partial<IUser>) => {
+
+    const { name, email } = payload
+
+    const user = await User.create({
+        name, email
+    })
+
+    return user
+}
+
+export const userServices = {
+    createUser
+}
+
+```
+
+- user.controller.ts 
+
+
+```ts 
+import { IUser } from "./user.interface";
+import { User } from "./user.model";
+
+const createUser = async (payload: Partial<IUser>) => {
+
+    const { name, email } = payload
+
+    const user = await User.create({
+        name, email
+    })
+
+    return user
+}
+
+export const userServices = {
+    createUser
+}
+```
