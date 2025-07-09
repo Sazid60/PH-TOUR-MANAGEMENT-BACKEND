@@ -180,3 +180,51 @@ app.get("/", (req: Request, res: Response) => {
 
 export default app
 ```
+
+## 26-4 Create first User and organizing Routing System
+
+- routes - > index.ts 
+
+```ts 
+import { Router } from "express";
+import { UserRoutes } from "../modules/user/user.route";
+
+export const router = Router()
+
+const moduleRoutes = [
+    {
+        path: "/user",
+        route: UserRoutes
+    }
+]
+
+moduleRoutes.forEach((route) => {
+    router.use(route.path, route.route)
+})
+```
+
+- app.ts 
+
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+
+const app = express()
+app.use(express.json())
+app.use(cors())
+
+app.use("/api/v1", router)
+
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+export default app
+```
