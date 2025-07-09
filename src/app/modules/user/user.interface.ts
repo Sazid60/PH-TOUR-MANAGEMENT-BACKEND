@@ -7,6 +7,13 @@ export enum Role {
     GUIDE = "GUIDE"
 }
 
+
+export enum IsActive {
+    ACTIVE = "ACTIVE",
+    INACTIVE = "INACTIVE",
+    BLOCKED = "BLOCKED"
+}
+
 // AUTH PROVIDER 
 
 /**
@@ -26,9 +33,9 @@ export interface IUser {
     phone?: string,
     picture?: string,
     address?: string,
-    isDeleted?: string,
-    isActive?: string,
-    isVerified?: string,
+    isDeleted?: boolean,
+    isActive?: IsActive,
+    isVerified?: boolean,
     role: Role
     auths: IAuthProvider[],
     bookings?: Types.ObjectId[],
