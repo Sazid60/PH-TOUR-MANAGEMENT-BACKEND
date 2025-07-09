@@ -13,6 +13,13 @@ export enum Role {
     GUIDE = "GUIDE"
 }
 
+
+export enum IsActive {
+    ACTIVE = "ACTIVE",
+    INACTIVE = "INACTIVE",
+    BLOCKED = "BLOCKED"
+}
+
 // AUTH PROVIDER 
 
 /**
@@ -33,8 +40,8 @@ export interface IUser {
     picture?: string,
     address?: string,
     isDeleted?: boolean,
-    isActive?: string,
-    isVerified?: string,
+    isActive?: IsActive,
+    isVerified?: boolean,
     role: Role
     auths: IAuthProvider[],
     bookings?: Types.ObjectId[],
@@ -53,8 +60,8 @@ import { model, Schema } from "mongoose";
 import { IAuthProvider, IsActive, IUser, Role } from "./user.interface";
 
 const authProviderSchema = new Schema<IAuthProvider>({
-    provider: { types: String, required: true },
-    providerId: { types: String, required: true }
+    provider: { type: String, required: true },
+    providerId: { type: String, required: true }
 }, {
     versionKey: false,
     _id: false
@@ -70,14 +77,14 @@ const userSchema = new Schema<IUser>({
     },
     phone: { type: String },
     picture: { type: String },
-    address: { types: String },
-    isDeleted: { types: Boolean, default: false },
+    address: { type: String },
+    isDeleted: { type: Boolean, default: false },
     isActive: {
         type: String,
         enum: Object.values(IsActive),
         default: IsActive.ACTIVE
     },
-    isVerified: { types: Boolean, default: false },
+    isVerified: { type: Boolean, default: false },
 
     auths: [authProviderSchema]
 
@@ -90,6 +97,86 @@ const userSchema = new Schema<IUser>({
 export const User = model<IUser>("User", userSchema)
 
 
+
 ```
 
 ## 26-3 Create User controller and route
+
+- user.controller.ts 
+
+```ts 
+
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+import { User } from "./user.model";
+
+const createUser = async (req: Request, res: Response) => {
+
+    try {
+
+        const { name, email } = req.body
+
+        const user = await User.create({
+            name, email
+        })
+        res.status(httpStatus.CREATED).json({
+            message: "User Created Successfully",
+            user
+        })
+
+    } catch (err: any) {
+        console.log(err)
+        res.status(httpStatus.BAD_REQUEST).json({
+            message: `Something went wrong ${err?.message}`,
+            err
+        })
+    }
+
+}
+
+export const userControllers = {
+    createUser
+}
+```
+
+- user.route.ts 
+
+```ts 
+import { Router } from "express";
+import { userControllers } from "./user.controller";
+
+const router = Router()
+
+
+router.post("/register", userControllers.createUser)
+
+export const UserRoutes = router
+```
+
+- app.ts 
+
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+import { UserRoutes } from "./app/modules/user/user.route"
+
+const app = express()
+app.use(express.json())
+app.use(cors())
+
+app.use("/api/v1/user", UserRoutes)
+
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+export default app
+```

@@ -2,8 +2,8 @@ import { model, Schema } from "mongoose";
 import { IAuthProvider, IsActive, IUser, Role } from "./user.interface";
 
 const authProviderSchema = new Schema<IAuthProvider>({
-    provider: { types: String, required: true },
-    providerId: { types: String, required: true }
+    provider: { type: String, required: true },
+    providerId: { type: String, required: true }
 }, {
     versionKey: false,
     _id: false
@@ -19,14 +19,14 @@ const userSchema = new Schema<IUser>({
     },
     phone: { type: String },
     picture: { type: String },
-    address: { types: String },
-    isDeleted: { types: Boolean, default: false },
+    address: { type: String },
+    isDeleted: { type: Boolean, default: false },
     isActive: {
         type: String,
         enum: Object.values(IsActive),
         default: IsActive.ACTIVE
     },
-    isVerified: { types: Boolean, default: false },
+    isVerified: { type: Boolean, default: false },
 
     auths: [authProviderSchema]
 
