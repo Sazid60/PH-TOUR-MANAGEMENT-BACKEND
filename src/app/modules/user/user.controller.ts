@@ -5,10 +5,16 @@ import { NextFunction, Request, Response } from "express";
 import httpStatus from "http-status-codes"
 
 import { userServices } from "./user.service";
+// import AppError from "../../errorHelpers/AppError";
 
 const createUser = async (req: Request, res: Response, next: NextFunction) => {
 
     try {
+
+        //  for error checking 
+        // throw new Error("Mammah ! Error From Regular Error")
+
+        // throw new AppError(httpStatus.BAD_REQUEST, "Mammah ! Error From custom AppError")
 
         // using the service 
         const user = await userServices.createUser(req.body)
