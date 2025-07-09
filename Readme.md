@@ -263,21 +263,259 @@ export const userServices = {
 
 
 ```ts 
-import { IUser } from "./user.interface";
-import { User } from "./user.model";
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Request, Response } from "express";
 
-const createUser = async (payload: Partial<IUser>) => {
+import httpStatus from "http-status-codes"
 
-    const { name, email } = payload
+import { userServices } from "./user.service";
 
-    const user = await User.create({
-        name, email
-    })
+const createUser = async (req: Request, res: Response) => {
 
-    return user
+    try {
+
+        // using the service 
+        const user = await userServices.createUser(req.body)
+
+        res.status(httpStatus.CREATED).json({
+            message: "User Created Successfully",
+            user
+        })
+
+    } catch (err: any) {
+        console.log(err)
+        res.status(httpStatus.BAD_REQUEST).json({
+            message: `Something went wrong ${err?.message}`,
+            err
+        })
+    }
+
 }
 
-export const userServices = {
+export const userControllers = {
     createUser
 }
+```
+
+## 26-6 Setting Up Global Error Handler
+
+- middlewares - > globalErrorHandler.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express";
+import { envVars } from "../config/env";
+
+export const globalErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+
+    const statusCode = 500
+    const message = `Something went wrong !! ${err?.message}`
+
+    res.status(statusCode).json({
+        success: false,
+        message,
+        err,
+        stack: envVars.NODE_ENV === "development" ? err.stack : null
+    })
+
+}
+```
+
+- user.controller.ts 
+
+```ts 
+
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+
+const createUser = async (req: Request, res: Response, next: NextFunction) => {
+
+    try {
+
+        // using the service 
+        const user = await userServices.createUser(req.body)
+
+        res.status(httpStatus.CREATED).json({
+            message: "User Created Successfully",
+            user
+        })
+
+    } catch (err: any) {
+        // console.log(err)
+        // res.status(httpStatus.BAD_REQUEST).json({
+        //     message: `Something went wrong ${err?.message}`,
+        //     err
+        // })
+
+        // will take to global error handler 
+        next(err)
+    }
+
+}
+
+export const userControllers = {
+    createUser
+}
+```
+
+- app.ts 
+
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
+
+const app = express()
+app.use(express.json())
+app.use(cors())
+
+app.use("/api/v1", router)
+
+// using the global error handler 
+app.use(globalErrorHandler)
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+export default app
+```
+
+## 26-7 Create Custom Error Class, AppError
+
+- we can not customize the raw js `throw new Error()`
+- Lets make a custom error class now for our own preferences 
+
+- errorHelpers -> AppError.ts 
+
+```ts 
+class AppError extends Error {
+    public statusCode: number;
+
+    constructor(statusCode: number, message: string, stack = "") {
+        super(message) // this is like throw new Error("..."). this part is done inside super. 
+
+        // now lets set the statuscode with the coming error
+        this.statusCode = statusCode //this is coming from parameter and this.statusCode is from the class object
+
+        // this stack is coming from parameter 
+        if (stack) {
+            this.stack = stack // this.stack coming from Error 
+        } else {
+            Error.captureStackTrace(this, this.constructor)
+        }
+    }
+}
+
+export default AppError
+```
+- globalErrorHandler.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express";
+import { envVars } from "../config/env";
+import AppError from "../errorHelpers/AppError";
+
+export const globalErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+
+    let statusCode = 500
+    let message = "Something went wrong !!"
+
+
+    // for custom error 
+    if (err instanceof AppError) {
+        statusCode = err.statusCode;
+        message = err.message
+    } else if (err instanceof Error) {
+        statusCode = 500;
+        message = err?.message
+    }
+
+    res.status(statusCode).json({
+        success: false,
+        message,
+        err,
+        stack: envVars.NODE_ENV === "development" ? err.stack : null
+    })
+
+}
+```
+
+- For testing regular error 
+
+```ts 
+
+throw new Error("Mammah ! Error From Regular Error")
+```
+- For testing custom error 
+
+```ts 
+throw new AppError(httpStatus.BAD_REQUEST, "Mammah ! Error From custom AppError")
+
+```
+
+## 26-8 Create Not Found Route
+- This must be bellow the global error handler. 
+- middlewares - > notFound.ts 
+
+```ts 
+import { Request, Response } from "express";
+import httpStatus from 'http-status-codes';
+
+const notFound = (req: Request, res: Response) => {
+    res.status(httpStatus.NOT_FOUND).json({
+        success: false,
+        message: "Route Not Found"
+    })
+}
+
+export default notFound
+```
+
+- app.ts 
+
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
+import notFound from "./app/middlewares/notFound"
+
+const app = express()
+app.use(express.json())
+app.use(cors())
+
+app.use("/api/v1", router)
+
+// using the global error handler 
+app.use(globalErrorHandler)
+
+// Using not found route 
+app.use(notFound)
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+export default app
 ```
