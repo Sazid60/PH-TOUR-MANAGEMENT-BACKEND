@@ -519,3 +519,294 @@ app.get("/", (req: Request, res: Response) => {
 
 export default app
 ```
+
+## 26-9 Avoid Repetition of Try-Catch, use catchAsync
+
+- We will do this using higher order function 
+
+#### What is Higher Order Function ? 
+- It will take a function as parameter and can return a function as well. 
+
+- Function => try-catch => req-response
+
+
+```ts 
+
+type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>
+// It’s a function that takes three arguments, just like a typical Express middleware:
+// This means the function returns a Promise that resolves to void (nothing). In other words, it's an async function.
+
+const catchAsync = (fn: AsyncHandler) => (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch((err: any) => {
+        console.log(err)
+        next(err)
+    })
+}
+
+const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = await userServices.createUser(req.body)
+    res.status(httpStatus.CREATED).json({
+        message: "User Created Successfully",
+        user
+    })
+})
+
+// steps
+/**
+ * catch async receives the request response function
+ * returns a function and the return function receives req: Request, res: Response, next: NextFunction as function parameter and these are coming from catchAsync received function
+ * As the return function just resolves promises so void return is said in type 
+ * Promise.resolve(fn(req, res, next)) these are coming from parameter of the return function
+ * This avoids needing try/catch in every route handler and lets Express handle errors globally.
+ * 
+ * */ 
+```
+
+- user.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable no-console */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+// import AppError from "../../errorHelpers/AppError";
+
+
+type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>
+// It’s a function that takes three arguments, just like a typical Express middleware:
+// This means the function returns a Promise that resolves to void (nothing). In other words, it's an async function.
+
+const catchAsync = (fn: AsyncHandler) => (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch((err: any) => {
+        console.log(err)
+        next(err)
+    })
+}
+
+const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = await userServices.createUser(req.body)
+    res.status(httpStatus.CREATED).json({
+        message: "User Created Successfully",
+        user
+    })
+})
+
+// steps
+/**
+ * catch async receives the request response function
+ * returns a function and the return function receives req: Request, res: Response, next: NextFunction as function parameter and these are coming from catchAsync received function
+ * As the return function just resolves promises so void return is said in type 
+ * Promise.resolve(fn(req, res, next)) these are coming from parameter of the return function
+ * This avoids needing try/catch in every route handler and lets Express handle errors globally.
+ * 
+ * */
+
+const getAllUsers = () => async (req: Request, res: Response, next: NextFunction) => {
+
+    try {
+        const user = await userServices.getAllUsers()
+
+        res.status(httpStatus.CREATED).json({
+            message: "Users Retrieved Successfully",
+            user
+        })
+
+    } catch (err: any) {
+        console.log(err)
+        next(err)
+    }
+
+}
+
+export const userControllers = {
+    createUser,
+    getAllUsers
+}
+
+```
+
+- Now Lets separate these 
+
+- app -> utils --> catchAsync.ts 
+
+```ts 
+
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { NextFunction, Request, Response } from "express"
+
+type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>
+
+export const catchAsync = (fn: AsyncHandler) => (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch((err: any) => {
+        console.log(err)
+        next(err)
+    })
+}
+
+// steps
+/**
+ * catch async receives the request response function
+ * returns a function and the return function receives req: Request, res: Response, next: NextFunction as function parameter and these are coming from catchAsync received function
+ * As the return function just resolves promises so void return is said in type 
+ * Promise.resolve(fn(req, res, next)) these are coming from parameter of the return function
+ * This avoids needing try/catch in every route handler and lets Express handle errors globally.
+ * 
+ * */
+```
+
+- user.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+import { catchAsync } from "../../catchAsync";
+
+
+const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = await userServices.createUser(req.body)
+    res.status(httpStatus.CREATED).json({
+        message: "User Created Successfully",
+        user
+    })
+})
+
+const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const users = await userServices.getAllUsers()
+    res.status(httpStatus.OK).json({
+        message: "Users Retrieved Successfully",
+        users
+    })
+})
+
+export const userControllers = {
+    createUser,
+    getAllUsers
+}
+```
+
+## 26-10 Create sendResponse Utility Function
+
+- Utils ->sendResponse.ts 
+
+```ts 
+import { Response } from "express";
+
+interface TMeta {
+    total: number
+}
+interface TResponse<T> {
+    statusCode: number;
+    success: boolean;
+    message: string;
+    data: T;
+    meta?: TMeta
+}
+
+// this T will be automatically inferred from received  data 
+export const sendResponse = <T>(res: Response, data: TResponse<T>) => {
+    res.status(data.statusCode).json({
+        statusCode: data.statusCode,
+        success: data.success,
+        meta: data.meta,
+        data: data.data
+    })
+}
+```
+
+- user.service.ts 
+
+```ts 
+import { IUser } from "./user.interface";
+import { User } from "./user.model";
+
+const createUser = async (payload: Partial<IUser>) => {
+
+    const { name, email } = payload
+
+    const user = await User.create({
+        name, email
+    })
+
+    return user
+}
+
+const getAllUsers = async () => {
+    const users = await User.find({})
+    const totalUsers = await User.countDocuments()
+
+    return {
+        data: users,
+        meta: {
+            total: totalUsers
+        }
+    }
+}
+
+export const userServices = {
+    createUser,
+    getAllUsers
+}
+```
+
+- user.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+import { catchAsync } from "../../catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+
+
+const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = await userServices.createUser(req.body)
+    // res.status(httpStatus.CREATED).json({
+    //     message: "User Created Successfully",
+    //     user
+    // })
+    // using send response
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        data: user
+    })
+})
+
+const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const result = await userServices.getAllUsers()
+    // res.status(httpStatus.OK).json({
+    //     message: "Users Retrieved Successfully",
+    //     users
+    // })
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        meta: result.meta,
+        data: result.data,
+
+    })
+})
+
+export const userControllers = {
+    createUser,
+    getAllUsers
+}
+```
+
