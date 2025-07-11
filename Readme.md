@@ -451,3 +451,103 @@ export const userServices = {
     getAllUsers
 }
 ```
+
+## 27-5 Create Login API
+
+- auth.service.ts 
+
+```ts
+import AppError from "../../errorHelpers/AppError"
+import { IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+
+
+const credentialsLogin = async (payload: Partial<IUser>) => {
+    const { email, password } = payload
+
+    const isUserExist = await User.findOne({ email })
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
+    }
+
+    const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+    if (!isPasswordMatch) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
+    }
+
+    return {
+        email: isUserExist.email
+    }
+}
+
+export const AuthServices = {
+    credentialsLogin
+}
+```
+
+- auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+import { catchAsync } from "../../catchAsync"
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+
+const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const loginInfo = await AuthServices.credentialsLogin(req.body)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged In Successfully",
+        data: loginInfo
+    })
+})
+
+export const AuthControllers = {
+    credentialsLogin
+}
+```
+
+- auth.route.ts
+
+```ts 
+import { Router } from "express";
+import { AuthControllers } from "./auth.controller";
+
+const router = Router()
+
+router.post("/login", AuthControllers.credentialsLogin)
+
+export const authRoutes = router
+```
+
+-  routes-> index.ts 
+  
+```ts 
+import { Router } from "express";
+import { UserRoutes } from "../modules/user/user.route";
+import { authRoutes } from "../modules/auth/auth.route";
+
+export const router = Router()
+
+const moduleRoutes = [
+    {
+        path: "/user",
+        route: UserRoutes
+    },
+    {
+        path: "/auth",
+        route: authRoutes
+    },
+]
+
+moduleRoutes.forEach((route) => {
+    router.use(route.path, route.route)
+})
+```
