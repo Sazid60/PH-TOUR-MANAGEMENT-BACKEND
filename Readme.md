@@ -284,3 +284,104 @@ export const updateUserZodSchema = z.object({
         .optional()
 })
 ```
+
+## 27-3 Adding password and fix bugs for email password based User registration API
+
+```ts 
+import AppError from "../../errorHelpers/AppError";
+import { IAuthProvider, IUser } from "./user.interface";
+import { User } from "./user.model";
+import httpStatus from 'http-status-codes';
+
+const createUser = async (payload: Partial<IUser>) => {
+
+    const { email, ...rest } = payload
+
+    const isUserExist = await User.findOne({ email })
+
+    if (isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Already Exists")
+    }
+
+    // // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // const authProvider: IAuthProvider = {provider : "credentials", providerId : email!}
+
+
+    const authProvider: IAuthProvider = { provider: "credentials", providerId: email as string }
+
+    const user = await User.create({
+        email,
+        auths: [authProvider],
+        ...rest
+    })
+
+    return user
+}
+
+const getAllUsers = async () => {
+    const users = await User.find({})
+    const totalUsers = await User.countDocuments()
+
+    return {
+        data: users,
+        meta: {
+            total: totalUsers
+        }
+    }
+}
+
+export const userServices = {
+    createUser,
+    getAllUsers
+}
+```
+
+- update in user.interface.ts 
+
+```ts 
+import { Types } from "mongoose"
+
+export enum Role {
+    SUPER_ADMIN = "SUPER_ADMIN",
+    ADMIN = "ADMIN",
+    USER = "USER",
+    GUIDE = "GUIDE"
+}
+
+
+export enum IsActive {
+    ACTIVE = "ACTIVE",
+    INACTIVE = "INACTIVE",
+    BLOCKED = "BLOCKED"
+}
+
+// AUTH PROVIDER 
+
+/**
+ * EMAIL, PASSWORD
+ * GOOGLE AUTHENTICATION
+ */
+
+export interface IAuthProvider {
+    provider: "google" | "credentials";
+    providerId: string
+
+}
+export interface IUser {
+    name: string,
+    email: string,
+    password?: string,
+    phone?: string,
+    picture?: string,
+    address?: string,
+    isDeleted?: boolean,
+    isActive?: IsActive,
+    isVerified?: boolean,
+    role: Role
+    auths: IAuthProvider[],
+    bookings?: Types.ObjectId[],
+    guides?: Types.ObjectId[]
+
+
+}
+```
