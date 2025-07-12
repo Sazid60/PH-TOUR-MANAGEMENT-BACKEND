@@ -3,6 +3,8 @@ import { IUser } from "../user/user.interface"
 import httpStatus from 'http-status-codes';
 import { User } from "../user/user.model";
 import bcrypt from "bcryptjs";
+import { generateToken } from "../../utils/jwt";
+import { envVars } from "../../config/env";
 
 
 const credentialsLogin = async (payload: Partial<IUser>) => {
@@ -19,8 +21,20 @@ const credentialsLogin = async (payload: Partial<IUser>) => {
         throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
     }
 
+    // generating access token 
+
+    const jwtPayload = {
+        userId: isUserExist._id,
+        email: isUserExist.email,
+        role: isUserExist.role
+    }
+    // const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
+    const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+    // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
+
     return {
-        email: isUserExist.email
+        accessToken
     }
 }
 

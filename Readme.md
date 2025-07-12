@@ -551,3 +551,858 @@ moduleRoutes.forEach((route) => {
     router.use(route.path, route.route)
 })
 ```
+
+## 27-6 Intro to JWT, create an AccessToken during Login
+
+[JWT](https://jwt.io/)
+
+
+- user -> login-> token given (email, role, _id) -> booking/payment/payment Cancel -> token (show) nad checked -> proceed
+- Token will allow to verify the users authenticity and will allow to do operations 
+- Token pattern 
+
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0
+.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30
+```
+- Token Contains 3 parts first part is token header says the encryption algorithm .
+
+
+```ts 
+// decoded header
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+```
+
+- Second part holds the payload means it will hold the encrypted data like this 
+
+```ts
+// decoded Payload
+{
+  "sub": "1234567890",
+  "name": "John Doe",
+  "admin": true,
+  "iat": 1516239022
+}
+```
+
+- last part is signature part. This is the identity of the token provider. 
+
+```ts 
+// decoded signature 
+a-string-secret-at-least-256-bits-long
+```
+
+![alt text](image-1.png)
+
+#### lets start with jtw 
+
+- Install jwt 
+
+```
+npm install jsonwebtoken
+```
+
+- install the dependencies 
+
+```
+npm install --save @types/jsonwebtoken
+```
+
+- auth.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError"
+import { IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+
+
+const credentialsLogin = async (payload: Partial<IUser>) => {
+    const { email, password } = payload
+
+    const isUserExist = await User.findOne({ email })
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
+    }
+
+    const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+    if (!isPasswordMatch) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
+    }
+
+    // generating access token 
+
+    const jwtPayload = {
+        userId: isUserExist._id,
+        email: isUserExist.email,
+        role: isUserExist.role
+    }
+    const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
+
+    // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
+
+    return {
+        accessToken
+    }
+}
+
+export const AuthServices = {
+    credentialsLogin
+}
+```
+
+- we can test our token here. 
+
+![alt text](image-2.png)
+
+
+## 27-7 Verify Token and protect route using middleware
+
+
+- Using token to verify user route 
+- user.route.ts 
+
+```ts 
+
+import { NextFunction, Request, Response, Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema } from "./user.validation";
+import AppError from "../../errorHelpers/AppError";
+import jwt, { JwtPayload } from 'jsonwebtoken';
+import { Role } from "./user.interface";
+
+
+const router = Router()
+
+
+router.get("/all-users",
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            // we will get the access token from frontend inside headers. foe now we will set in postman headers 
+            const accessToken = req.headers.authorization;
+            if (!accessToken) {
+                throw new AppError(403, "No Token Received")
+            }
+
+            //  if there is token we will verify 
+
+            const verifiedToken = jwt.verify(accessToken, "secret")
+
+            // console.log(verifiedToken)
+
+            // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+
+            if ((verifiedToken as JwtPayload).role !== Role.ADMIN ) {
+                throw new AppError(403, "You Are Not Permitted To View This Route ")
+            }
+
+            /*
+            const accessToken: string | undefined 
+            token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
+            */
+            next()
+        } catch (error) {
+            next(error)
+        }
+    },
+    userControllers.getAllUsers)
+router.post("/register", validateRequest(createUserZodSchema), userControllers.createUser)
+
+export const UserRoutes = router
+```
+
+## 27-8 Create JWT Helpers and checkAuth Middleware
+
+- add these field inside env 
+
+```
+PORT=
+DB_URL=
+NODE_ENV=
+BCRYPT_SALT_ROUND=
+JWT_ACCESS_SECRET=
+JWT_ACCESS_EXPIRES=
+```
+
+- add inside the config file env.ts 
+
+```ts 
+import dotenv from "dotenv"
+
+dotenv.config()
+
+interface EnvConfig {
+    PORT: string
+    DB_URL: string,
+    NODE_ENV: "development" | "production",
+    BCRYPT_SALT_ROUND: string,
+    JWT_ACCESS_SECRET: string,
+    JWT_ACCESS_EXPIRES: string
+}
+
+const loadEnvVariables = (): EnvConfig => {
+    const requiredEnvVariables: string[] = ["PORT", "DB_URL", "NODE_ENV", "BCRYPT_SALT_ROUND", "JWT_ACCESS_SECRET", "JWT_ACCESS_EXPIRES"];
+
+    requiredEnvVariables.forEach(key => {
+        if (!process.env[key]) {
+            throw new Error(`Missing required environment variable ${key}`);
+        }
+    });
+
+    return {
+        PORT: process.env.PORT as string,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        DB_URL: process.env.DB_URL!,
+        NODE_ENV: process.env.NODE_ENV as "development" | "production",
+        BCRYPT_SALT_ROUND: process.env.BCRYPT_SALT_ROUND as string,
+        JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET as string,
+        JWT_ACCESS_EXPIRES: process.env.JWT_ACCESS_EXPIRES as string
+    };
+};
+
+
+export const envVars = loadEnvVariables()
+
+```
+
+-  utils -> jwt.ts 
+  
+```ts
+import { JwtPayload, SignOptions } from "jsonwebtoken";
+import jwt from 'jsonwebtoken';
+
+export const generateToken = (payload: JwtPayload, secret: string, expiresIn: string) => {
+    const token = jwt.sign(payload, secret, { expiresIn } as SignOptions)
+
+    // is to explicitly tell TypeScript that the object { expiresIn } should be treated as a SignOptions type, which is an interface provided by the jsonwebtoken package.
+    return token
+}
+
+export const verifyToken = (token: string, secret: string) => {
+    const verifyToken = jwt.verify(token, secret)
+    return verifyToken
+}
+```
+
+- auth.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError"
+import { IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken } from "../../utils/jwt";
+import { envVars } from "../../config/env";
+
+
+const credentialsLogin = async (payload: Partial<IUser>) => {
+    const { email, password } = payload
+
+    const isUserExist = await User.findOne({ email })
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
+    }
+
+    const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+    if (!isPasswordMatch) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
+    }
+
+    // generating access token 
+
+    const jwtPayload = {
+        userId: isUserExist._id,
+        email: isUserExist.email,
+        role: isUserExist.role
+    }
+    // const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
+    const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+    // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
+
+    return {
+        accessToken
+    }
+}
+
+export const AuthServices = {
+    credentialsLogin
+}
+```
+
+## 27-9 Complete checkAuth Middleware and Seed Super Admin
+
+- middlewares -> checkAuth.ts 
+
+```ts 
+
+import { JwtPayload } from 'jsonwebtoken';
+
+
+
+import { NextFunction, Request, Response } from "express";
+import AppError from '../errorHelpers/AppError';
+import { verifyToken } from '../utils/jwt';
+import { envVars } from '../config/env';
+
+// this is receiving all the role sent (converted into an array of the sent roles) from where the middleware has been called 
+export const checkAuth = (...authRoles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        // we will get the access token from frontend inside headers. foe now we will set in postman headers 
+        const accessToken = req.headers.authorization;
+        if (!accessToken) {
+            throw new AppError(403, "No Token Received")
+        }
+
+        //  if there is token we will verify 
+
+        // const verifiedToken = jwt.verify(accessToken, "secret")
+
+        const verifiedToken = verifyToken(accessToken, envVars.JWT_ACCESS_SECRET) as JwtPayload
+
+        // console.log(verifiedToken)
+
+        // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+
+        // authRoles = ["ADMIN", "SUPER_ADMIN"]
+        if (!authRoles.includes(verifiedToken.role)) {
+            throw new AppError(403, "You Are Not Permitted To View This Route ")
+        }
+
+        /*
+        const accessToken: string | undefined 
+        token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
+        */
+        next()
+    } catch (error) {
+        next(error)
+    }
+}
+```
+
+- user.route.ts 
+
+```ts 
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema } from "./user.validation";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "./user.interface";
+
+
+
+const router = Router()
+
+
+
+router.get("/all-users", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getAllUsers)
+router.post("/register", validateRequest(createUserZodSchema), userControllers.createUser)
+
+export const UserRoutes = router
+```
+
+#### Lets do something like when a server is created a user will be created automatically and the user role will be super admin
+
+- utils -> seedSuperAdmin.ts 
+
+```ts 
+/* eslint-disable no-console */
+import { envVars } from "../config/env"
+import { IAuthProvider, IUser, Role } from "../modules/user/user.interface"
+import { User } from "../modules/user/user.model"
+import bcrypt from 'bcryptjs';
+
+export const seedSuperAdmin = async () => {
+    try {
+        const isSuperAdminExist = await User.findOne({ email: envVars.SUPER_ADMIN_EMAIL })
+        if (isSuperAdminExist) {
+            console.log("Super Admin Already Exists!")
+            return
+        }
+        console.log("Trying To Create Super Admin")
+        const hashedPassword = await bcrypt.hash(envVars.SUPER_ADMIN_PASSWORD, Number(envVars.BCRYPT_SALT_ROUND))
+        const authProvider: IAuthProvider = {
+            provider: "credentials",
+            providerId: envVars.SUPER_ADMIN_EMAIL
+        }
+
+        const payload: IUser = {
+            name: "Super admin",
+            role: Role.SUPER_ADMIN,
+            email: envVars.SUPER_ADMIN_EMAIL,
+            password: hashedPassword,
+            isVerified: true,
+            auths: [authProvider]
+
+        }
+        const superAdmin = await User.create(payload)
+        console.log("Super Admin Created Successfully \n")
+        console.log(superAdmin)
+
+
+    } catch (error) {
+        console.log(error)
+    }
+}
+```
+
+- server.ts 
+
+```ts 
+/* eslint-disable no-console */
+import { Server } from "http"
+
+import mongoose from "mongoose"
+import app from "./app";
+import { envVars } from "./app/config/env";
+import { seedSuperAdmin } from "./app/utils/seedSuperAdmin";
+
+let server: Server
+
+
+const startServer = async () => {
+    try {
+        await mongoose.connect(envVars.DB_URL);
+        console.log("Connected To MongoDb")
+        server = app.listen(envVars.PORT, () => {
+            console.log(`Server is Running On Port ${envVars.PORT}`)
+        })
+    } catch (error) {
+        console.log(error)
+    }
+}
+
+(async () => {
+    await startServer()
+    await seedSuperAdmin()
+})()
+
+process.on("SIGTERM", (err) => {
+    console.log("Signal Termination Happened...! Server Is Shutting Down !", err)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+
+process.on("SIGINT", () => {
+    console.log("I am manually Closing the server! Server Is Shutting Down !")
+
+    // if express server is on and unhandled rejection happens close the express server using server.close()
+    // then close the node server using process.exit(1)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+process.on("unhandledRejection", () => {
+
+    console.log("Unhandled Rejection Happened...! Server Is Shutting Down !")
+
+    // if express server is on and unhandled rejection happens close the express server using server.close()
+    // then close the node server using process.exit(1)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+
+process.on("uncaughtException", (err) => {
+    console.log("Uncaught Exception Happened...! Server Is Shutting Down !", err)
+
+    // if express server is on and unhandled rejection happens close the express server using server.close()
+    // then close the node server using process.exit(1)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+
+
+```
+
+## 27-10 Create Update User API and Password Re-Hashing
+
+- user.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError";
+import { IAuthProvider, IUser, Role } from "./user.interface";
+import { User } from "./user.model";
+import httpStatus from 'http-status-codes';
+import bcrypt from "bcryptjs";
+import { JwtPayload } from "jsonwebtoken";
+import { envVars } from "../../config/env";
+
+const createUser = async (payload: Partial<IUser>) => {
+
+    const { email, password, ...rest } = payload
+
+    const isUserExist = await User.findOne({ email })
+
+    if (isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Already Exists")
+    }
+
+    const hashedPassword = await bcrypt.hash(password as string, 10)
+    // const isPasswordMatch = await bcrypt.compare("password as string", hashedPassword) //compares password 
+
+
+
+    // // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // const authProvider: IAuthProvider = {provider : "credentials", providerId : email!}
+
+
+    const authProvider: IAuthProvider = { provider: "credentials", providerId: email as string }
+
+    const user = await User.create({
+        email,
+        password: hashedPassword,
+        auths: [authProvider],
+        ...rest
+    })
+
+    return user
+}
+
+const getAllUsers = async () => {
+    const users = await User.find({})
+    const totalUsers = await User.countDocuments()
+
+    return {
+        data: users,
+        meta: {
+            total: totalUsers
+        }
+    }
+}
+
+// update User 
+
+const updateUser = async (userId: string, payload: Partial<IUser>, decodedToken: JwtPayload) => {
+
+    const ifUserExist = await User.findById(userId);
+
+    if (!ifUserExist) {
+        throw new AppError(httpStatus.NOT_FOUND, "User Not Found")
+    }
+
+    /**
+     * email - can not update
+     * name, phone, password address
+     * password - re hashing
+     *  only admin superadmin - role, isDeleted...
+     * 
+     * promoting to superadmin - superadmin
+     */
+
+    if (payload.role) {
+        if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+
+        if (payload.role === Role.SUPER_ADMIN && decodedToken.role === Role.ADMIN) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+    }
+
+    if (payload.isActive || payload.isDeleted || payload.isVerified) {
+        if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+    }
+
+    if (payload.password) {
+        payload.password = await bcrypt.hash(payload.password, envVars.BCRYPT_SALT_ROUND)
+    }
+
+    const newUpdatedUser = await User.findByIdAndUpdate(userId, payload, { new: true, runValidators: true })
+
+    return newUpdatedUser
+}
+
+
+export const userServices = {
+    createUser,
+    getAllUsers,
+    updateUser
+}
+```
+
+- user.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+import { catchAsync } from "../../catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { verifyToken } from "../../utils/jwt";
+import { envVars } from "../../config/env";
+import { JwtPayload } from "jsonwebtoken";
+
+
+const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = await userServices.createUser(req.body)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        data: user
+    })
+})
+const updateUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.params.id
+    const token = req.headers.authorization
+    const verifiedToken = verifyToken(token as string, envVars.JWT_ACCESS_SECRET) as JwtPayload
+    const payload = req.body
+    const user = await userServices.updateUser(userId, payload, verifiedToken)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Updated Successfully",
+        data: user
+    })
+})
+
+const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const result = await userServices.getAllUsers()
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        meta: result.meta,
+        data: result.data,
+
+    })
+})
+
+export const userControllers = {
+    createUser,
+    getAllUsers,
+    updateUser
+}
+```
+
+- user.route.ts
+
+```ts 
+
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema, updateUserZodSchema } from "./user.validation";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "./user.interface";
+
+
+
+const router = Router()
+
+
+
+router.get("/all-users", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getAllUsers)
+router.post("/register", validateRequest(createUserZodSchema), userControllers.createUser)
+
+router.patch("/:id", validateRequest(updateUserZodSchema), checkAuth(...Object.values(Role)), userControllers.updateUser)
+
+export const UserRoutes = router
+```
+
+## 27-11 Add custom property to Request Parameter of Express, req.user
+
+- We will declare custom type for our express package. since we do not have control over the packages. 
+- we can not handle the package types but we can make custom types for the package.
+- It is needed because if we use a package that do not support this will cause us error. like Surjo Pay has no ts decoration file  
+- Suppose we want to add something more with req. that express do not have. i mean we are extending the Request of express 
+- checkAuth.ts 
+```ts 
+
+import { JwtPayload } from 'jsonwebtoken';
+
+
+
+import { NextFunction, Request, Response } from "express";
+import AppError from '../errorHelpers/AppError';
+import { verifyToken } from '../utils/jwt';
+import { envVars } from '../config/env';
+
+// this is receiving all the role sent (converted into an array of the sent roles) from where the middleware has been called 
+export const checkAuth = (...authRoles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        // we will get the access token from frontend inside headers. foe now we will set in postman headers 
+        const accessToken = req.headers.authorization;
+        if (!accessToken) {
+            throw new AppError(403, "No Token Received")
+        }
+
+        //  if there is token we will verify 
+
+        // const verifiedToken = jwt.verify(accessToken, "secret")
+
+        const verifiedToken = verifyToken(accessToken, envVars.JWT_ACCESS_SECRET) as JwtPayload
+
+        // console.log(verifiedToken)
+
+        // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+
+        // authRoles = ["ADMIN", "SUPER_ADMIN"]
+        if (!authRoles.includes(verifiedToken.role)) {
+            throw new AppError(403, "You Are Not Permitted To View This Route ")
+        }
+
+        /*
+        const accessToken: string | undefined 
+        token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
+        */
+
+        // we will make the verified token to go outside
+
+        // req has its own method like we can get req.bdy, req.params. req.query, req.headers. but we will not get req.user for this we need custom package. of user. 
+        req.user = verifiedToken
+
+        next()
+    } catch (error) {
+        next(error)
+    }
+}
+```
+
+- inside this we want to set the token in req.user. but req.user do not exist
+- to do this we need to custom the express type as its coming from express. we have to interface that is globally accessible 
+
+- interfaces -> index.d.ts 
+```ts 
+import { JwtPayload } from "jsonwebtoken";
+
+declare global {
+    namespace Express { // area or the thing coming from 
+        interface Request { // the field we want to extend 
+            user: JwtPayload
+        }
+    }
+}
+```
+-  now lets add in tsconfig.json file if do not automatically updates 
+
+```json 
+{
+  "compilerOptions": {
+    ..........
+  },
+//    add this 
+  "includes": [
+    "./src/app/interfaces/index.d.ts"
+  ]
+}
+```
+
+
+
+- As this is extended and check auth is able to set the token inside the req.user
+- so now on we do not need to call verify token every time we will get it directly from check auth directly.  
+
+```ts 
+    // we will get the verified token directly from checkauth now 
+    const verifiedToken = req.user
+```
+
+- user.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+import { catchAsync } from "../../catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { verifyToken } from '../../utils/jwt';
+import { envVars } from "../../config/env";
+import { JwtPayload } from "jsonwebtoken";
+
+
+const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = await userServices.createUser(req.body)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        data: user
+    })
+})
+const updateUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.params.id
+    const token = req.headers.authorization
+    // const verifiedToken = verifyToken(token as string, envVars.JWT_ACCESS_SECRET) as JwtPayload
+    // we will get the verified token directly from checkauth now 
+    const verifiedToken = req.user
+
+    const payload = req.body
+    const user = await userServices.updateUser(userId, payload, verifiedToken)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Updated Successfully",
+        data: user
+    })
+})
+
+const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const result = await userServices.getAllUsers()
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        meta: result.meta,
+        data: result.data,
+
+    })
+})
+
+export const userControllers = {
+    createUser,
+    getAllUsers,
+    updateUser
+}
+```
+
+ 
