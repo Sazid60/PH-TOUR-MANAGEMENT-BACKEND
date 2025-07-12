@@ -1,7 +1,342 @@
 # PH-TOUR-MANAGEMENT-BACKEND-1
-## 26-1 Create User interface
+- will do zod validation 
+- Email Password based custom authentication 
+- Role based authorization using jwt 
 
-- User Interface Added `user.interface.ts`
+## 27-1 Create Zod Validation for User APIs
+
+- We Will Use Zod While Creating a Data and Updating a Data 
+- We will create zod for those whose default values are not set by backend. 
+
+
+```ts 
+import { NextFunction, Request, Response, Router } from "express";
+import { userControllers } from "./user.controller";
+import z from "zod";
+
+const router = Router()
+
+
+router.get("/all-users", userControllers.getAllUsers)
+router.post("/register",
+// middleware 
+    async (req: Request, res: Response, next: NextFunction) => {
+
+        const createUserZodSchema = z.object({
+            name: z
+                .string({ invalid_type_error: "Name must be string" })
+                .min(2, { message: "Name must be at least 2 characters long." })
+                .max(50, { message: "Name cannot exceed 50 characters." }),
+            email: z
+                .string({ invalid_type_error: "Email must be string" })
+                .email({ message: "Invalid email address format." })
+                .min(5, { message: "Email must be at least 5 characters long." })
+                .max(100, { message: "Email cannot exceed 100 characters." }),
+            password: z
+                .string({ invalid_type_error: "Password must be string" })
+                .min(8, { message: "Password must be at least 8 characters long." })
+                .regex(/^(?=.*[A-Z])/, {
+                    message: "Password must contain at least 1 uppercase letter.",
+                })
+                .regex(/^(?=.*[!@#$%^&*])/, {
+                    message: "Password must contain at least 1 special character.",
+                })
+                .regex(/^(?=.*\d)/, {
+                    message: "Password must contain at least 1 number.",
+                }),
+            phone: z
+                .string({ invalid_type_error: "Phone Number must be string" })
+                .regex(/^(?:\+8801\d{9}|01\d{9})$/, {
+                    message: "Phone number must be valid for Bangladesh. Format: +8801XXXXXXXXX or 01XXXXXXXXX",
+                })
+                .optional(),
+            address: z
+                .string({ invalid_type_error: "Address must be string" })
+                .max(200, { message: "Address cannot exceed 200 characters." })
+                .optional()
+        })
+
+        // validate using zod 
+
+        req.body = await createUserZodSchema.parseAsync(req.body)
+        console.log(req.body)
+        // next()
+
+    },
+
+    userControllers.createUser)
+
+export const UserRoutes = router
+```
+
+## 27-2 Implement validateRequest Middleware
+
+- lets separate the validation 
+
+- user.validation.ts 
+
+```ts 
+import z from "zod";
+
+export const createUserZodSchema = z.object({
+    name: z
+        .string({ invalid_type_error: "Name must be string" })
+        .min(2, { message: "Name must be at least 2 characters long." })
+        .max(50, { message: "Name cannot exceed 50 characters." }),
+    email: z
+        .string({ invalid_type_error: "Email must be string" })
+        .email({ message: "Invalid email address format." })
+        .min(5, { message: "Email must be at least 5 characters long." })
+        .max(100, { message: "Email cannot exceed 100 characters." }),
+    password: z
+        .string({ invalid_type_error: "Password must be string" })
+        .min(8, { message: "Password must be at least 8 characters long." })
+        .regex(/^(?=.*[A-Z])/, {
+            message: "Password must contain at least 1 uppercase letter.",
+        })
+        .regex(/^(?=.*[!@#$%^&*])/, {
+            message: "Password must contain at least 1 special character.",
+        })
+        .regex(/^(?=.*\d)/, {
+            message: "Password must contain at least 1 number.",
+        }),
+    phone: z
+        .string({ invalid_type_error: "Phone Number must be string" })
+        .regex(/^(?:\+8801\d{9}|01\d{9})$/, {
+            message: "Phone number must be valid for Bangladesh. Format: +8801XXXXXXXXX or 01XXXXXXXXX",
+        })
+        .optional(),
+    address: z
+        .string({ invalid_type_error: "Address must be string" })
+        .max(200, { message: "Address cannot exceed 200 characters." })
+        .optional()
+})
+```
+- lets make a higher order function for the middleware. the higher order function will be will be always coupled with middleware. it will take a function inside and will return a function from inside. when we will split a middleware function in express we will use higher order because the middleware function must return a function with request response. 
+
+
+- user.route.ts 
+
+```ts 
+import { NextFunction, Request, Response, Router } from "express";
+import { userControllers } from "./user.controller";
+import { AnyZodObject } from "zod";
+import { createUserZodSchema } from "./user.validation";
+
+
+const validateRequest = (zodSchema: AnyZodObject) => async (req: Request, res: Response, next: NextFunction) => {
+
+    try {
+        console.log("Old Body", req.body)
+        req.body = await zodSchema.parseAsync(req.body)
+        console.log("New Body", req.body)
+        // here data sanitization is working. 
+        // Its like if we give any unwanted fields inside body it will removed. and set the properly validated data inside body and the controller will work with it. 
+        next()
+    } catch (error) {
+        next(error)
+
+    }
+}
+// this higher order function returning a function made with req and response that is required inside the route middleware. 
+
+
+const router = Router()
+
+
+router.get("/all-users", userControllers.getAllUsers)
+router.post("/register",
+    validateRequest(createUserZodSchema),
+    userControllers.createUser)
+
+export const UserRoutes = router
+```
+
+![alt text](image.png)
+
+- Now lets separate the validate request middleware to another file 
+- middlewares -> validateRequest.ts 
+
+```ts 
+import { NextFunction, Request, Response } from "express"
+import { AnyZodObject } from "zod"
+
+export const validateRequest = (zodSchema: AnyZodObject) => async (req: Request, res: Response, next: NextFunction) => {
+
+    try {
+        console.log("Old Body", req.body)
+        req.body = await zodSchema.parseAsync(req.body)
+        console.log("New Body", req.body)
+        // here data sanitization is working. 
+        // Its like if we give any unwanted fields inside body it will removed. and set the properly validated data inside body and the controller will work with it. 
+        next()
+    } catch (error) {
+        next(error)
+
+    }
+}
+```
+
+- user.route.ts 
+
+```ts 
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema } from "./user.validation";
+
+
+const router = Router()
+
+
+router.get("/all-users", userControllers.getAllUsers)
+router.post("/register",
+    validateRequest(createUserZodSchema),
+    userControllers.createUser)
+
+export const UserRoutes = router
+```
+
+- basically the validateRequest middleware is helping us validate the data send in body before entering in contact with server. 
+
+- Added Update User Validation schema 
+
+
+```ts 
+import z from "zod";
+import { IsActive, Role } from "./user.interface";
+
+export const createUserZodSchema = z.object({
+    name: z
+        .string({ invalid_type_error: "Name must be string" })
+        .min(2, { message: "Name must be at least 2 characters long." })
+        .max(50, { message: "Name cannot exceed 50 characters." }),
+    email: z
+        .string({ invalid_type_error: "Email must be string" })
+        .email({ message: "Invalid email address format." })
+        .min(5, { message: "Email must be at least 5 characters long." })
+        .max(100, { message: "Email cannot exceed 100 characters." }),
+    password: z
+        .string({ invalid_type_error: "Password must be string" })
+        .min(8, { message: "Password must be at least 8 characters long." })
+        .regex(/^(?=.*[A-Z])/, {
+            message: "Password must contain at least 1 uppercase letter.",
+        })
+        .regex(/^(?=.*[!@#$%^&*])/, {
+            message: "Password must contain at least 1 special character.",
+        })
+        .regex(/^(?=.*\d)/, {
+            message: "Password must contain at least 1 number.",
+        }),
+    phone: z
+        .string({ invalid_type_error: "Phone Number must be string" })
+        .regex(/^(?:\+8801\d{9}|01\d{9})$/, {
+            message: "Phone number must be valid for Bangladesh. Format: +8801XXXXXXXXX or 01XXXXXXXXX",
+        })
+        .optional(),
+    address: z
+        .string({ invalid_type_error: "Address must be string" })
+        .max(200, { message: "Address cannot exceed 200 characters." })
+        .optional()
+})
+
+export const updateUserZodSchema = z.object({
+    name: z
+        .string({ invalid_type_error: "Name must be string" })
+        .min(2, { message: "Name must be at least 2 characters long." })
+        .max(50, { message: "Name cannot exceed 50 characters." }).optional(),
+    password: z
+        .string({ invalid_type_error: "Password must be string" })
+        .min(8, { message: "Password must be at least 8 characters long." })
+        .regex(/^(?=.*[A-Z])/, {
+            message: "Password must contain at least 1 uppercase letter.",
+        })
+        .regex(/^(?=.*[!@#$%^&*])/, {
+            message: "Password must contain at least 1 special character.",
+        })
+        .regex(/^(?=.*\d)/, {
+            message: "Password must contain at least 1 number.",
+        }).optional(),
+    phone: z
+        .string({ invalid_type_error: "Phone Number must be string" })
+        .regex(/^(?:\+8801\d{9}|01\d{9})$/, {
+            message: "Phone number must be valid for Bangladesh. Format: +8801XXXXXXXXX or 01XXXXXXXXX",
+        })
+        .optional(),
+    role: z
+        // .enum(["ADMIN", "GUIDE", "USER", "SUPER_ADMIN"])
+        .enum(Object.values(Role) as [string])
+        .optional(),
+    isActive: z
+        .enum(Object.values(IsActive) as [string])
+        .optional(),
+    isDeleted: z
+        .boolean({ invalid_type_error: "isDeleted must be true or false" })
+        .optional(),
+    isVerified: z
+        .boolean({ invalid_type_error: "isVerified must be true or false" })
+        .optional(),
+    address: z
+        .string({ invalid_type_error: "Address must be string" })
+        .max(200, { message: "Address cannot exceed 200 characters." })
+        .optional()
+})
+```
+
+## 27-3 Adding password and fix bugs for email password based User registration API
+
+```ts 
+import AppError from "../../errorHelpers/AppError";
+import { IAuthProvider, IUser } from "./user.interface";
+import { User } from "./user.model";
+import httpStatus from 'http-status-codes';
+
+const createUser = async (payload: Partial<IUser>) => {
+
+    const { email, ...rest } = payload
+
+    const isUserExist = await User.findOne({ email })
+
+    if (isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Already Exists")
+    }
+
+    // // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // const authProvider: IAuthProvider = {provider : "credentials", providerId : email!}
+
+
+    const authProvider: IAuthProvider = { provider: "credentials", providerId: email as string }
+
+    const user = await User.create({
+        email,
+        auths: [authProvider],
+        ...rest
+    })
+
+    return user
+}
+
+const getAllUsers = async () => {
+    const users = await User.find({})
+    const totalUsers = await User.countDocuments()
+
+    return {
+        data: users,
+        meta: {
+            total: totalUsers
+        }
+    }
+}
+
+export const userServices = {
+    createUser,
+    getAllUsers
+}
+```
+
+- update in user.interface.ts 
 
 ```ts 
 import { Types } from "mongoose"
@@ -28,7 +363,7 @@ export enum IsActive {
  */
 
 export interface IAuthProvider {
-    provider: string;
+    provider: "google" | "credentials";
     providerId: string
 
 }
@@ -51,691 +386,49 @@ export interface IUser {
 }
 ```
 
-## 26-2 Create User model
+## 27-4 Fix sensitive password bugs, Password Hashing
 
-- user.model.ts
+- install bcryptjs
 
-```ts
-import { model, Schema } from "mongoose";
-import { IAuthProvider, IsActive, IUser, Role } from "./user.interface";
-
-const authProviderSchema = new Schema<IAuthProvider>({
-    provider: { type: String, required: true },
-    providerId: { type: String, required: true }
-}, {
-    versionKey: false,
-    _id: false
-})
-const userSchema = new Schema<IUser>({
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String },
-    role: {
-        type: String,
-        enum: Object.values(Role),
-        default: Role.USER
-    },
-    phone: { type: String },
-    picture: { type: String },
-    address: { type: String },
-    isDeleted: { type: Boolean, default: false },
-    isActive: {
-        type: String,
-        enum: Object.values(IsActive),
-        default: IsActive.ACTIVE
-    },
-    isVerified: { type: Boolean, default: false },
-
-    auths: [authProviderSchema]
-
-}, {
-    versionKey: false,
-    timestamps: true
-})
-
-
-export const User = model<IUser>("User", userSchema)
-
-
-
+```bash
+npm i bcryptjs
 ```
 
-## 26-3 Create User controller and route
-
-- user.controller.ts 
+- user.service.ts password hashing
 
 ```ts 
-
-/* eslint-disable no-console */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { Request, Response } from "express";
-
-import httpStatus from "http-status-codes"
+import AppError from "../../errorHelpers/AppError";
+import { IAuthProvider, IUser } from "./user.interface";
 import { User } from "./user.model";
-
-const createUser = async (req: Request, res: Response) => {
-
-    try {
-
-        const { name, email } = req.body
-
-        const user = await User.create({
-            name, email
-        })
-        res.status(httpStatus.CREATED).json({
-            message: "User Created Successfully",
-            user
-        })
-
-    } catch (err: any) {
-        console.log(err)
-        res.status(httpStatus.BAD_REQUEST).json({
-            message: `Something went wrong ${err?.message}`,
-            err
-        })
-    }
-
-}
-
-export const userControllers = {
-    createUser
-}
-```
-
-- user.route.ts 
-
-```ts 
-import { Router } from "express";
-import { userControllers } from "./user.controller";
-
-const router = Router()
-
-
-router.post("/register", userControllers.createUser)
-
-export const UserRoutes = router
-```
-
-- app.ts 
-
-```ts 
-
-import express, { Request, Response } from "express"
-
-import cors from "cors"
-import { UserRoutes } from "./app/modules/user/user.route"
-
-const app = express()
-app.use(express.json())
-app.use(cors())
-
-app.use("/api/v1/user", UserRoutes)
-
-
-app.get("/", (req: Request, res: Response) => {
-    res.status(200).json({
-        message: "Welcome To Tour Management System"
-    })
-})
-
-export default app
-```
-
-## 26-4 Create first User and organizing Routing System
-
-- routes - > index.ts 
-
-```ts 
-import { Router } from "express";
-import { UserRoutes } from "../modules/user/user.route";
-
-export const router = Router()
-
-const moduleRoutes = [
-    {
-        path: "/user",
-        route: UserRoutes
-    }
-]
-
-moduleRoutes.forEach((route) => {
-    router.use(route.path, route.route)
-})
-```
-
-- app.ts 
-
-```ts 
-
-import express, { Request, Response } from "express"
-
-import cors from "cors"
-
-import { router } from "./app/routes"
-
-const app = express()
-app.use(express.json())
-app.use(cors())
-
-app.use("/api/v1", router)
-
-
-app.get("/", (req: Request, res: Response) => {
-    res.status(200).json({
-        message: "Welcome To Tour Management System"
-    })
-})
-
-export default app
-```
-
-## 26-5 Split User Controller and Make Service Layer
-- Controller controls request and responses
-- We have to separate the database related works to service layer. 
-- database related works should not be done inside controller. It should just handle the request and response
-- So, database related works/business logics should be in service layer.   
-- The Flow is like `Request -> Route -> Controller -> Service -> model -> DB -> service -> controller -> Response`
-
-- user.service.ts 
-
-```ts
-import { IUser } from "./user.interface";
-import { User } from "./user.model";
-
-const createUser = async (payload: Partial<IUser>) => {
-
-    const { name, email } = payload
-
-    const user = await User.create({
-        name, email
-    })
-
-    return user
-}
-
-export const userServices = {
-    createUser
-}
-
-```
-
-- user.controller.ts 
-
-
-```ts 
-/* eslint-disable no-console */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { Request, Response } from "express";
-
-import httpStatus from "http-status-codes"
-
-import { userServices } from "./user.service";
-
-const createUser = async (req: Request, res: Response) => {
-
-    try {
-
-        // using the service 
-        const user = await userServices.createUser(req.body)
-
-        res.status(httpStatus.CREATED).json({
-            message: "User Created Successfully",
-            user
-        })
-
-    } catch (err: any) {
-        console.log(err)
-        res.status(httpStatus.BAD_REQUEST).json({
-            message: `Something went wrong ${err?.message}`,
-            err
-        })
-    }
-
-}
-
-export const userControllers = {
-    createUser
-}
-```
-
-## 26-6 Setting Up Global Error Handler
-
-- middlewares - > globalErrorHandler.ts 
-
-```ts 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { NextFunction, Request, Response } from "express";
-import { envVars } from "../config/env";
-
-export const globalErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
-
-    const statusCode = 500
-    const message = `Something went wrong !! ${err?.message}`
-
-    res.status(statusCode).json({
-        success: false,
-        message,
-        err,
-        stack: envVars.NODE_ENV === "development" ? err.stack : null
-    })
-
-}
-```
-
-- user.controller.ts 
-
-```ts 
-
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextFunction, Request, Response } from "express";
-
-import httpStatus from "http-status-codes"
-
-import { userServices } from "./user.service";
-
-const createUser = async (req: Request, res: Response, next: NextFunction) => {
-
-    try {
-
-        // using the service 
-        const user = await userServices.createUser(req.body)
-
-        res.status(httpStatus.CREATED).json({
-            message: "User Created Successfully",
-            user
-        })
-
-    } catch (err: any) {
-        // console.log(err)
-        // res.status(httpStatus.BAD_REQUEST).json({
-        //     message: `Something went wrong ${err?.message}`,
-        //     err
-        // })
-
-        // will take to global error handler 
-        next(err)
-    }
-
-}
-
-export const userControllers = {
-    createUser
-}
-```
-
-- app.ts 
-
-```ts 
-
-import express, { Request, Response } from "express"
-
-import cors from "cors"
-
-import { router } from "./app/routes"
-import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
-
-const app = express()
-app.use(express.json())
-app.use(cors())
-
-app.use("/api/v1", router)
-
-// using the global error handler 
-app.use(globalErrorHandler)
-
-app.get("/", (req: Request, res: Response) => {
-    res.status(200).json({
-        message: "Welcome To Tour Management System"
-    })
-})
-
-export default app
-```
-
-## 26-7 Create Custom Error Class, AppError
-
-- we can not customize the raw js `throw new Error()`
-- Lets make a custom error class now for our own preferences 
-
-- errorHelpers -> AppError.ts 
-
-```ts 
-class AppError extends Error {
-    public statusCode: number;
-
-    constructor(statusCode: number, message: string, stack = "") {
-        super(message) // this is like throw new Error("..."). this part is done inside super. 
-
-        // now lets set the statuscode with the coming error
-        this.statusCode = statusCode //this is coming from parameter and this.statusCode is from the class object
-
-        // this stack is coming from parameter 
-        if (stack) {
-            this.stack = stack // this.stack coming from Error 
-        } else {
-            Error.captureStackTrace(this, this.constructor)
-        }
-    }
-}
-
-export default AppError
-```
-- globalErrorHandler.ts 
-
-```ts 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { NextFunction, Request, Response } from "express";
-import { envVars } from "../config/env";
-import AppError from "../errorHelpers/AppError";
-
-export const globalErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
-
-    let statusCode = 500
-    let message = "Something went wrong !!"
-
-
-    // for custom error 
-    if (err instanceof AppError) {
-        statusCode = err.statusCode;
-        message = err.message
-    } else if (err instanceof Error) {
-        statusCode = 500;
-        message = err?.message
-    }
-
-    res.status(statusCode).json({
-        success: false,
-        message,
-        err,
-        stack: envVars.NODE_ENV === "development" ? err.stack : null
-    })
-
-}
-```
-
-- For testing regular error 
-
-```ts 
-
-throw new Error("Mammah ! Error From Regular Error")
-```
-- For testing custom error 
-
-```ts 
-throw new AppError(httpStatus.BAD_REQUEST, "Mammah ! Error From custom AppError")
-
-```
-
-## 26-8 Create Not Found Route
-- This must be bellow the global error handler. 
-- middlewares - > notFound.ts 
-
-```ts 
-import { Request, Response } from "express";
 import httpStatus from 'http-status-codes';
-
-const notFound = (req: Request, res: Response) => {
-    res.status(httpStatus.NOT_FOUND).json({
-        success: false,
-        message: "Route Not Found"
-    })
-}
-
-export default notFound
-```
-
-- app.ts 
-
-```ts 
-
-import express, { Request, Response } from "express"
-
-import cors from "cors"
-
-import { router } from "./app/routes"
-import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
-import notFound from "./app/middlewares/notFound"
-
-const app = express()
-app.use(express.json())
-app.use(cors())
-
-app.use("/api/v1", router)
-
-// using the global error handler 
-app.use(globalErrorHandler)
-
-// Using not found route 
-app.use(notFound)
-
-app.get("/", (req: Request, res: Response) => {
-    res.status(200).json({
-        message: "Welcome To Tour Management System"
-    })
-})
-
-export default app
-```
-
-## 26-9 Avoid Repetition of Try-Catch, use catchAsync
-
-- We will do this using higher order function 
-
-#### What is Higher Order Function ? 
-- It will take a function as parameter and can return a function as well. 
-
-- Function => try-catch => req-response
-
-
-```ts 
-
-type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>
-// It’s a function that takes three arguments, just like a typical Express middleware:
-// This means the function returns a Promise that resolves to void (nothing). In other words, it's an async function.
-
-const catchAsync = (fn: AsyncHandler) => (req: Request, res: Response, next: NextFunction) => {
-    Promise.resolve(fn(req, res, next)).catch((err: any) => {
-        console.log(err)
-        next(err)
-    })
-}
-
-const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-    const user = await userServices.createUser(req.body)
-    res.status(httpStatus.CREATED).json({
-        message: "User Created Successfully",
-        user
-    })
-})
-
-// steps
-/**
- * catch async receives the request response function
- * returns a function and the return function receives req: Request, res: Response, next: NextFunction as function parameter and these are coming from catchAsync received function
- * As the return function just resolves promises so void return is said in type 
- * Promise.resolve(fn(req, res, next)) these are coming from parameter of the return function
- * This avoids needing try/catch in every route handler and lets Express handle errors globally.
- * 
- * */ 
-```
-
-- user.controller.ts 
-
-```ts 
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable no-console */
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextFunction, Request, Response } from "express";
-
-import httpStatus from "http-status-codes"
-
-import { userServices } from "./user.service";
-// import AppError from "../../errorHelpers/AppError";
-
-
-type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>
-// It’s a function that takes three arguments, just like a typical Express middleware:
-// This means the function returns a Promise that resolves to void (nothing). In other words, it's an async function.
-
-const catchAsync = (fn: AsyncHandler) => (req: Request, res: Response, next: NextFunction) => {
-    Promise.resolve(fn(req, res, next)).catch((err: any) => {
-        console.log(err)
-        next(err)
-    })
-}
-
-const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-    const user = await userServices.createUser(req.body)
-    res.status(httpStatus.CREATED).json({
-        message: "User Created Successfully",
-        user
-    })
-})
-
-// steps
-/**
- * catch async receives the request response function
- * returns a function and the return function receives req: Request, res: Response, next: NextFunction as function parameter and these are coming from catchAsync received function
- * As the return function just resolves promises so void return is said in type 
- * Promise.resolve(fn(req, res, next)) these are coming from parameter of the return function
- * This avoids needing try/catch in every route handler and lets Express handle errors globally.
- * 
- * */
-
-const getAllUsers = () => async (req: Request, res: Response, next: NextFunction) => {
-
-    try {
-        const user = await userServices.getAllUsers()
-
-        res.status(httpStatus.CREATED).json({
-            message: "Users Retrieved Successfully",
-            user
-        })
-
-    } catch (err: any) {
-        console.log(err)
-        next(err)
-    }
-
-}
-
-export const userControllers = {
-    createUser,
-    getAllUsers
-}
-
-```
-
-- Now Lets separate these 
-
-- app -> utils --> catchAsync.ts 
-
-```ts 
-
-/* eslint-disable no-console */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextFunction, Request, Response } from "express"
-
-type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>
-
-export const catchAsync = (fn: AsyncHandler) => (req: Request, res: Response, next: NextFunction) => {
-    Promise.resolve(fn(req, res, next)).catch((err: any) => {
-        console.log(err)
-        next(err)
-    })
-}
-
-// steps
-/**
- * catch async receives the request response function
- * returns a function and the return function receives req: Request, res: Response, next: NextFunction as function parameter and these are coming from catchAsync received function
- * As the return function just resolves promises so void return is said in type 
- * Promise.resolve(fn(req, res, next)) these are coming from parameter of the return function
- * This avoids needing try/catch in every route handler and lets Express handle errors globally.
- * 
- * */
-```
-
-- user.controller.ts 
-
-```ts 
-/* eslint-disable @typescript-eslint/no-unused-vars */
-
-import { NextFunction, Request, Response } from "express";
-
-import httpStatus from "http-status-codes"
-
-import { userServices } from "./user.service";
-import { catchAsync } from "../../catchAsync";
-
-
-const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-    const user = await userServices.createUser(req.body)
-    res.status(httpStatus.CREATED).json({
-        message: "User Created Successfully",
-        user
-    })
-})
-
-const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-    const users = await userServices.getAllUsers()
-    res.status(httpStatus.OK).json({
-        message: "Users Retrieved Successfully",
-        users
-    })
-})
-
-export const userControllers = {
-    createUser,
-    getAllUsers
-}
-```
-
-## 26-10 Create sendResponse Utility Function
-
-- Utils ->sendResponse.ts 
-
-```ts 
-import { Response } from "express";
-
-interface TMeta {
-    total: number
-}
-interface TResponse<T> {
-    statusCode: number;
-    success: boolean;
-    message: string;
-    data: T;
-    meta?: TMeta
-}
-
-// this T will be automatically inferred from received  data 
-export const sendResponse = <T>(res: Response, data: TResponse<T>) => {
-    res.status(data.statusCode).json({
-        statusCode: data.statusCode,
-        success: data.success,
-        meta: data.meta,
-        data: data.data
-    })
-}
-```
-
-- user.service.ts 
-
-```ts 
-import { IUser } from "./user.interface";
-import { User } from "./user.model";
+import bcrypt from "bcryptjs";
 
 const createUser = async (payload: Partial<IUser>) => {
 
-    const { name, email } = payload
+    const { email, password, ...rest } = payload
+
+    const isUserExist = await User.findOne({ email })
+
+    if (isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Already Exists")
+    }
+
+    const hashedPassword = await bcrypt.hash(password as string, 10)
+    // const isPasswordMatch = await bcrypt.compare("password as string", hashedPassword) //compares password 
+
+
+
+    // // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // const authProvider: IAuthProvider = {provider : "credentials", providerId : email!}
+
+
+    const authProvider: IAuthProvider = { provider: "credentials", providerId: email as string }
 
     const user = await User.create({
-        name, email
+        email,
+        password: hashedPassword,
+        auths: [authProvider],
+        ...rest
     })
 
     return user
@@ -759,6 +452,713 @@ export const userServices = {
 }
 ```
 
+## 27-5 Create Login API
+
+- auth.service.ts 
+
+```ts
+import AppError from "../../errorHelpers/AppError"
+import { IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+
+
+const credentialsLogin = async (payload: Partial<IUser>) => {
+    const { email, password } = payload
+
+    const isUserExist = await User.findOne({ email })
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
+    }
+
+    const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+    if (!isPasswordMatch) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
+    }
+
+    return {
+        email: isUserExist.email
+    }
+}
+
+export const AuthServices = {
+    credentialsLogin
+}
+```
+
+- auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+import { catchAsync } from "../../catchAsync"
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+
+const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const loginInfo = await AuthServices.credentialsLogin(req.body)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged In Successfully",
+        data: loginInfo
+    })
+})
+
+export const AuthControllers = {
+    credentialsLogin
+}
+```
+
+- auth.route.ts
+
+```ts 
+import { Router } from "express";
+import { AuthControllers } from "./auth.controller";
+
+const router = Router()
+
+router.post("/login", AuthControllers.credentialsLogin)
+
+export const authRoutes = router
+```
+
+-  routes-> index.ts 
+  
+```ts 
+import { Router } from "express";
+import { UserRoutes } from "../modules/user/user.route";
+import { authRoutes } from "../modules/auth/auth.route";
+
+export const router = Router()
+
+const moduleRoutes = [
+    {
+        path: "/user",
+        route: UserRoutes
+    },
+    {
+        path: "/auth",
+        route: authRoutes
+    },
+]
+
+moduleRoutes.forEach((route) => {
+    router.use(route.path, route.route)
+})
+```
+
+## 27-6 Intro to JWT, create an AccessToken during Login
+
+[JWT](https://jwt.io/)
+
+
+- user -> login-> token given (email, role, _id) -> booking/payment/payment Cancel -> token (show) nad checked -> proceed
+- Token will allow to verify the users authenticity and will allow to do operations 
+- Token pattern 
+
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0
+.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30
+```
+- Token Contains 3 parts first part is token header says the encryption algorithm .
+
+
+```ts 
+// decoded header
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+```
+
+- Second part holds the payload means it will hold the encrypted data like this 
+
+```ts
+// decoded Payload
+{
+  "sub": "1234567890",
+  "name": "John Doe",
+  "admin": true,
+  "iat": 1516239022
+}
+```
+
+- last part is signature part. This is the identity of the token provider. 
+
+```ts 
+// decoded signature 
+a-string-secret-at-least-256-bits-long
+```
+
+![alt text](image-1.png)
+
+#### lets start with jtw 
+
+- Install jwt 
+
+```
+npm install jsonwebtoken
+```
+
+- install the dependencies 
+
+```
+npm install --save @types/jsonwebtoken
+```
+
+- auth.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError"
+import { IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+
+
+const credentialsLogin = async (payload: Partial<IUser>) => {
+    const { email, password } = payload
+
+    const isUserExist = await User.findOne({ email })
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
+    }
+
+    const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+    if (!isPasswordMatch) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
+    }
+
+    // generating access token 
+
+    const jwtPayload = {
+        userId: isUserExist._id,
+        email: isUserExist.email,
+        role: isUserExist.role
+    }
+    const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
+
+    // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
+
+    return {
+        accessToken
+    }
+}
+
+export const AuthServices = {
+    credentialsLogin
+}
+```
+
+- we can test our token here. 
+
+![alt text](image-2.png)
+
+
+## 27-7 Verify Token and protect route using middleware
+
+
+- Using token to verify user route 
+- user.route.ts 
+
+```ts 
+
+import { NextFunction, Request, Response, Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema } from "./user.validation";
+import AppError from "../../errorHelpers/AppError";
+import jwt, { JwtPayload } from 'jsonwebtoken';
+import { Role } from "./user.interface";
+
+
+const router = Router()
+
+
+router.get("/all-users",
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            // we will get the access token from frontend inside headers. foe now we will set in postman headers 
+            const accessToken = req.headers.authorization;
+            if (!accessToken) {
+                throw new AppError(403, "No Token Received")
+            }
+
+            //  if there is token we will verify 
+
+            const verifiedToken = jwt.verify(accessToken, "secret")
+
+            // console.log(verifiedToken)
+
+            // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+
+            if ((verifiedToken as JwtPayload).role !== Role.ADMIN ) {
+                throw new AppError(403, "You Are Not Permitted To View This Route ")
+            }
+
+            /*
+            const accessToken: string | undefined 
+            token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
+            */
+            next()
+        } catch (error) {
+            next(error)
+        }
+    },
+    userControllers.getAllUsers)
+router.post("/register", validateRequest(createUserZodSchema), userControllers.createUser)
+
+export const UserRoutes = router
+```
+
+## 27-8 Create JWT Helpers and checkAuth Middleware
+
+- add these field inside env 
+
+```
+PORT=
+DB_URL=
+NODE_ENV=
+BCRYPT_SALT_ROUND=
+JWT_ACCESS_SECRET=
+JWT_ACCESS_EXPIRES=
+```
+
+- add inside the config file env.ts 
+
+```ts 
+import dotenv from "dotenv"
+
+dotenv.config()
+
+interface EnvConfig {
+    PORT: string
+    DB_URL: string,
+    NODE_ENV: "development" | "production",
+    BCRYPT_SALT_ROUND: string,
+    JWT_ACCESS_SECRET: string,
+    JWT_ACCESS_EXPIRES: string
+}
+
+const loadEnvVariables = (): EnvConfig => {
+    const requiredEnvVariables: string[] = ["PORT", "DB_URL", "NODE_ENV", "BCRYPT_SALT_ROUND", "JWT_ACCESS_SECRET", "JWT_ACCESS_EXPIRES"];
+
+    requiredEnvVariables.forEach(key => {
+        if (!process.env[key]) {
+            throw new Error(`Missing required environment variable ${key}`);
+        }
+    });
+
+    return {
+        PORT: process.env.PORT as string,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        DB_URL: process.env.DB_URL!,
+        NODE_ENV: process.env.NODE_ENV as "development" | "production",
+        BCRYPT_SALT_ROUND: process.env.BCRYPT_SALT_ROUND as string,
+        JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET as string,
+        JWT_ACCESS_EXPIRES: process.env.JWT_ACCESS_EXPIRES as string
+    };
+};
+
+
+export const envVars = loadEnvVariables()
+
+```
+
+-  utils -> jwt.ts 
+  
+```ts
+import { JwtPayload, SignOptions } from "jsonwebtoken";
+import jwt from 'jsonwebtoken';
+
+export const generateToken = (payload: JwtPayload, secret: string, expiresIn: string) => {
+    const token = jwt.sign(payload, secret, { expiresIn } as SignOptions)
+
+    // is to explicitly tell TypeScript that the object { expiresIn } should be treated as a SignOptions type, which is an interface provided by the jsonwebtoken package.
+    return token
+}
+
+export const verifyToken = (token: string, secret: string) => {
+    const verifyToken = jwt.verify(token, secret)
+    return verifyToken
+}
+```
+
+- auth.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError"
+import { IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken } from "../../utils/jwt";
+import { envVars } from "../../config/env";
+
+
+const credentialsLogin = async (payload: Partial<IUser>) => {
+    const { email, password } = payload
+
+    const isUserExist = await User.findOne({ email })
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
+    }
+
+    const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+    if (!isPasswordMatch) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
+    }
+
+    // generating access token 
+
+    const jwtPayload = {
+        userId: isUserExist._id,
+        email: isUserExist.email,
+        role: isUserExist.role
+    }
+    // const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
+    const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+    // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
+
+    return {
+        accessToken
+    }
+}
+
+export const AuthServices = {
+    credentialsLogin
+}
+```
+
+## 27-9 Complete checkAuth Middleware and Seed Super Admin
+
+- middlewares -> checkAuth.ts 
+
+```ts 
+
+import { JwtPayload } from 'jsonwebtoken';
+
+
+
+import { NextFunction, Request, Response } from "express";
+import AppError from '../errorHelpers/AppError';
+import { verifyToken } from '../utils/jwt';
+import { envVars } from '../config/env';
+
+// this is receiving all the role sent (converted into an array of the sent roles) from where the middleware has been called 
+export const checkAuth = (...authRoles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        // we will get the access token from frontend inside headers. foe now we will set in postman headers 
+        const accessToken = req.headers.authorization;
+        if (!accessToken) {
+            throw new AppError(403, "No Token Received")
+        }
+
+        //  if there is token we will verify 
+
+        // const verifiedToken = jwt.verify(accessToken, "secret")
+
+        const verifiedToken = verifyToken(accessToken, envVars.JWT_ACCESS_SECRET) as JwtPayload
+
+        // console.log(verifiedToken)
+
+        // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+
+        // authRoles = ["ADMIN", "SUPER_ADMIN"]
+        if (!authRoles.includes(verifiedToken.role)) {
+            throw new AppError(403, "You Are Not Permitted To View This Route ")
+        }
+
+        /*
+        const accessToken: string | undefined 
+        token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
+        */
+        next()
+    } catch (error) {
+        next(error)
+    }
+}
+```
+
+- user.route.ts 
+
+```ts 
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema } from "./user.validation";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "./user.interface";
+
+
+
+const router = Router()
+
+
+
+router.get("/all-users", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getAllUsers)
+router.post("/register", validateRequest(createUserZodSchema), userControllers.createUser)
+
+export const UserRoutes = router
+```
+
+#### Lets do something like when a server is created a user will be created automatically and the user role will be super admin
+
+- utils -> seedSuperAdmin.ts 
+
+```ts 
+/* eslint-disable no-console */
+import { envVars } from "../config/env"
+import { IAuthProvider, IUser, Role } from "../modules/user/user.interface"
+import { User } from "../modules/user/user.model"
+import bcrypt from 'bcryptjs';
+
+export const seedSuperAdmin = async () => {
+    try {
+        const isSuperAdminExist = await User.findOne({ email: envVars.SUPER_ADMIN_EMAIL })
+        if (isSuperAdminExist) {
+            console.log("Super Admin Already Exists!")
+            return
+        }
+        console.log("Trying To Create Super Admin")
+        const hashedPassword = await bcrypt.hash(envVars.SUPER_ADMIN_PASSWORD, Number(envVars.BCRYPT_SALT_ROUND))
+        const authProvider: IAuthProvider = {
+            provider: "credentials",
+            providerId: envVars.SUPER_ADMIN_EMAIL
+        }
+
+        const payload: IUser = {
+            name: "Super admin",
+            role: Role.SUPER_ADMIN,
+            email: envVars.SUPER_ADMIN_EMAIL,
+            password: hashedPassword,
+            isVerified: true,
+            auths: [authProvider]
+
+        }
+        const superAdmin = await User.create(payload)
+        console.log("Super Admin Created Successfully \n")
+        console.log(superAdmin)
+
+
+    } catch (error) {
+        console.log(error)
+    }
+}
+```
+
+- server.ts 
+
+```ts 
+/* eslint-disable no-console */
+import { Server } from "http"
+
+import mongoose from "mongoose"
+import app from "./app";
+import { envVars } from "./app/config/env";
+import { seedSuperAdmin } from "./app/utils/seedSuperAdmin";
+
+let server: Server
+
+
+const startServer = async () => {
+    try {
+        await mongoose.connect(envVars.DB_URL);
+        console.log("Connected To MongoDb")
+        server = app.listen(envVars.PORT, () => {
+            console.log(`Server is Running On Port ${envVars.PORT}`)
+        })
+    } catch (error) {
+        console.log(error)
+    }
+}
+
+(async () => {
+    await startServer()
+    await seedSuperAdmin()
+})()
+
+process.on("SIGTERM", (err) => {
+    console.log("Signal Termination Happened...! Server Is Shutting Down !", err)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+
+process.on("SIGINT", () => {
+    console.log("I am manually Closing the server! Server Is Shutting Down !")
+
+    // if express server is on and unhandled rejection happens close the express server using server.close()
+    // then close the node server using process.exit(1)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+process.on("unhandledRejection", () => {
+
+    console.log("Unhandled Rejection Happened...! Server Is Shutting Down !")
+
+    // if express server is on and unhandled rejection happens close the express server using server.close()
+    // then close the node server using process.exit(1)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+
+process.on("uncaughtException", (err) => {
+    console.log("Uncaught Exception Happened...! Server Is Shutting Down !", err)
+
+    // if express server is on and unhandled rejection happens close the express server using server.close()
+    // then close the node server using process.exit(1)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+
+
+```
+
+## 27-10 Create Update User API and Password Re-Hashing
+
+- user.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError";
+import { IAuthProvider, IUser, Role } from "./user.interface";
+import { User } from "./user.model";
+import httpStatus from 'http-status-codes';
+import bcrypt from "bcryptjs";
+import { JwtPayload } from "jsonwebtoken";
+import { envVars } from "../../config/env";
+
+const createUser = async (payload: Partial<IUser>) => {
+
+    const { email, password, ...rest } = payload
+
+    const isUserExist = await User.findOne({ email })
+
+    if (isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Already Exists")
+    }
+
+    const hashedPassword = await bcrypt.hash(password as string, 10)
+    // const isPasswordMatch = await bcrypt.compare("password as string", hashedPassword) //compares password 
+
+
+
+    // // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // const authProvider: IAuthProvider = {provider : "credentials", providerId : email!}
+
+
+    const authProvider: IAuthProvider = { provider: "credentials", providerId: email as string }
+
+    const user = await User.create({
+        email,
+        password: hashedPassword,
+        auths: [authProvider],
+        ...rest
+    })
+
+    return user
+}
+
+const getAllUsers = async () => {
+    const users = await User.find({})
+    const totalUsers = await User.countDocuments()
+
+    return {
+        data: users,
+        meta: {
+            total: totalUsers
+        }
+    }
+}
+
+// update User 
+
+const updateUser = async (userId: string, payload: Partial<IUser>, decodedToken: JwtPayload) => {
+
+    const ifUserExist = await User.findById(userId);
+
+    if (!ifUserExist) {
+        throw new AppError(httpStatus.NOT_FOUND, "User Not Found")
+    }
+
+    /**
+     * email - can not update
+     * name, phone, password address
+     * password - re hashing
+     *  only admin superadmin - role, isDeleted...
+     * 
+     * promoting to superadmin - superadmin
+     */
+
+    if (payload.role) {
+        if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+
+        if (payload.role === Role.SUPER_ADMIN && decodedToken.role === Role.ADMIN) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+    }
+
+    if (payload.isActive || payload.isDeleted || payload.isVerified) {
+        if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+    }
+
+    if (payload.password) {
+        payload.password = await bcrypt.hash(payload.password, envVars.BCRYPT_SALT_ROUND)
+    }
+
+    const newUpdatedUser = await User.findByIdAndUpdate(userId, payload, { new: true, runValidators: true })
+
+    return newUpdatedUser
+}
+
+
+export const userServices = {
+    createUser,
+    getAllUsers,
+    updateUser
+}
+```
+
 - user.controller.ts 
 
 ```ts 
@@ -771,15 +1171,13 @@ import httpStatus from "http-status-codes"
 import { userServices } from "./user.service";
 import { catchAsync } from "../../catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
+import { verifyToken } from "../../utils/jwt";
+import { envVars } from "../../config/env";
+import { JwtPayload } from "jsonwebtoken";
 
 
 const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     const user = await userServices.createUser(req.body)
-    // res.status(httpStatus.CREATED).json({
-    //     message: "User Created Successfully",
-    //     user
-    // })
-    // using send response
     sendResponse(res, {
         success: true,
         statusCode: httpStatus.CREATED,
@@ -787,13 +1185,22 @@ const createUser = catchAsync(async (req: Request, res: Response, next: NextFunc
         data: user
     })
 })
+const updateUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.params.id
+    const token = req.headers.authorization
+    const verifiedToken = verifyToken(token as string, envVars.JWT_ACCESS_SECRET) as JwtPayload
+    const payload = req.body
+    const user = await userServices.updateUser(userId, payload, verifiedToken)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Updated Successfully",
+        data: user
+    })
+})
 
 const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     const result = await userServices.getAllUsers()
-    // res.status(httpStatus.OK).json({
-    //     message: "Users Retrieved Successfully",
-    //     users
-    // })
     sendResponse(res, {
         success: true,
         statusCode: httpStatus.CREATED,
@@ -806,7 +1213,196 @@ const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFun
 
 export const userControllers = {
     createUser,
-    getAllUsers
+    getAllUsers,
+    updateUser
 }
 ```
 
+- user.route.ts
+
+```ts 
+
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema, updateUserZodSchema } from "./user.validation";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "./user.interface";
+
+
+
+const router = Router()
+
+
+
+router.get("/all-users", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getAllUsers)
+router.post("/register", validateRequest(createUserZodSchema), userControllers.createUser)
+
+router.patch("/:id", validateRequest(updateUserZodSchema), checkAuth(...Object.values(Role)), userControllers.updateUser)
+
+export const UserRoutes = router
+```
+
+## 27-11 Add custom property to Request Parameter of Express, req.user
+
+- We will declare custom type for our express package. since we do not have control over the packages. 
+- we can not handle the package types but we can make custom types for the package.
+- It is needed because if we use a package that do not support this will cause us error. like Surjo Pay has no ts decoration file  
+- Suppose we want to add something more with req. that express do not have. i mean we are extending the Request of express 
+- checkAuth.ts 
+```ts 
+
+import { JwtPayload } from 'jsonwebtoken';
+
+
+
+import { NextFunction, Request, Response } from "express";
+import AppError from '../errorHelpers/AppError';
+import { verifyToken } from '../utils/jwt';
+import { envVars } from '../config/env';
+
+// this is receiving all the role sent (converted into an array of the sent roles) from where the middleware has been called 
+export const checkAuth = (...authRoles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        // we will get the access token from frontend inside headers. foe now we will set in postman headers 
+        const accessToken = req.headers.authorization;
+        if (!accessToken) {
+            throw new AppError(403, "No Token Received")
+        }
+
+        //  if there is token we will verify 
+
+        // const verifiedToken = jwt.verify(accessToken, "secret")
+
+        const verifiedToken = verifyToken(accessToken, envVars.JWT_ACCESS_SECRET) as JwtPayload
+
+        // console.log(verifiedToken)
+
+        // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+
+        // authRoles = ["ADMIN", "SUPER_ADMIN"]
+        if (!authRoles.includes(verifiedToken.role)) {
+            throw new AppError(403, "You Are Not Permitted To View This Route ")
+        }
+
+        /*
+        const accessToken: string | undefined 
+        token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
+        */
+
+        // we will make the verified token to go outside
+
+        // req has its own method like we can get req.bdy, req.params. req.query, req.headers. but we will not get req.user for this we need custom package. of user. 
+        req.user = verifiedToken
+
+        next()
+    } catch (error) {
+        next(error)
+    }
+}
+```
+
+- inside this we want to set the token in req.user. but req.user do not exist
+- to do this we need to custom the express type as its coming from express. we have to interface that is globally accessible 
+
+- interfaces -> index.d.ts 
+```ts 
+import { JwtPayload } from "jsonwebtoken";
+
+declare global {
+    namespace Express { // area or the thing coming from 
+        interface Request { // the field we want to extend 
+            user: JwtPayload
+        }
+    }
+}
+```
+-  now lets add in tsconfig.json file if do not automatically updates 
+
+```json 
+{
+  "compilerOptions": {
+    ..........
+  },
+//    add this 
+  "includes": [
+    "./src/app/interfaces/index.d.ts"
+  ]
+}
+```
+
+
+
+- As this is extended and check auth is able to set the token inside the req.user
+- so now on we do not need to call verify token every time we will get it directly from check auth directly.  
+
+```ts 
+    // we will get the verified token directly from checkauth now 
+    const verifiedToken = req.user
+```
+
+- user.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+import { catchAsync } from "../../catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { verifyToken } from '../../utils/jwt';
+import { envVars } from "../../config/env";
+import { JwtPayload } from "jsonwebtoken";
+
+
+const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = await userServices.createUser(req.body)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        data: user
+    })
+})
+const updateUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.params.id
+    const token = req.headers.authorization
+    // const verifiedToken = verifyToken(token as string, envVars.JWT_ACCESS_SECRET) as JwtPayload
+    // we will get the verified token directly from checkauth now 
+    const verifiedToken = req.user
+
+    const payload = req.body
+    const user = await userServices.updateUser(userId, payload, verifiedToken)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Updated Successfully",
+        data: user
+    })
+})
+
+const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const result = await userServices.getAllUsers()
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        meta: result.meta,
+        data: result.data,
+
+    })
+})
+
+export const userControllers = {
+    createUser,
+    getAllUsers,
+    updateUser
+}
+```
+
+ 

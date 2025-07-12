@@ -5,17 +5,16 @@ import { NextFunction, Request, Response } from "express";
 import httpStatus from "http-status-codes"
 
 import { userServices } from "./user.service";
-import { catchAsync } from "../../catchAsync";
+
 import { sendResponse } from "../../utils/sendResponse";
+import { verifyToken } from '../../utils/jwt';
+import { envVars } from "../../config/env";
+import { JwtPayload } from "jsonwebtoken";
+import { catchAsync } from "../../utils/catchAsync";
 
 
 const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     const user = await userServices.createUser(req.body)
-    // res.status(httpStatus.CREATED).json({
-    //     message: "User Created Successfully",
-    //     user
-    // })
-    // using send response
     sendResponse(res, {
         success: true,
         statusCode: httpStatus.CREATED,
@@ -23,13 +22,25 @@ const createUser = catchAsync(async (req: Request, res: Response, next: NextFunc
         data: user
     })
 })
+const updateUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.params.id
+    const token = req.headers.authorization
+    // const verifiedToken = verifyToken(token as string, envVars.JWT_ACCESS_SECRET) as JwtPayload
+    // we will get the verified token directly from checkauth now 
+    const verifiedToken = req.user
+
+    const payload = req.body
+    const user = await userServices.updateUser(userId, payload, verifiedToken)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Updated Successfully",
+        data: user
+    })
+})
 
 const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     const result = await userServices.getAllUsers()
-    // res.status(httpStatus.OK).json({
-    //     message: "Users Retrieved Successfully",
-    //     users
-    // })
     sendResponse(res, {
         success: true,
         statusCode: httpStatus.CREATED,
@@ -42,5 +53,6 @@ const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFun
 
 export const userControllers = {
     createUser,
-    getAllUsers
+    getAllUsers,
+    updateUser
 }
