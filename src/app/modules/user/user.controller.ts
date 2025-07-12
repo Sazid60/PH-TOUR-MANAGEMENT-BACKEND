@@ -5,11 +5,12 @@ import { NextFunction, Request, Response } from "express";
 import httpStatus from "http-status-codes"
 
 import { userServices } from "./user.service";
-import { catchAsync } from "../../catchAsync";
+
 import { sendResponse } from "../../utils/sendResponse";
 import { verifyToken } from '../../utils/jwt';
 import { envVars } from "../../config/env";
 import { JwtPayload } from "jsonwebtoken";
+import { catchAsync } from "../../utils/catchAsync";
 
 
 const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
