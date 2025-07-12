@@ -36,6 +36,12 @@ export const checkAuth = (...authRoles: string[]) => async (req: Request, res: R
         const accessToken: string | undefined 
         token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
         */
+
+        // we will make the verified token to go outside
+
+        // req has its own method like we can get req.bdy, req.params. req.query, req.headers. but we will not get req.user for this we need custom package. of user. 
+        req.user = verifiedToken
+
         next()
     } catch (error) {
         next(error)

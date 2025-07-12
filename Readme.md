@@ -1227,7 +1227,7 @@ import { Router } from "express";
 import { validateRequest } from "../../middlewares/validateRequest";
 import { userControllers } from "./user.controller";
 
-import { createUserZodSchema } from "./user.validation";
+import { createUserZodSchema, updateUserZodSchema } from "./user.validation";
 import { checkAuth } from "../../middlewares/checkAuth";
 import { Role } from "./user.interface";
 
@@ -1240,7 +1240,169 @@ const router = Router()
 router.get("/all-users", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getAllUsers)
 router.post("/register", validateRequest(createUserZodSchema), userControllers.createUser)
 
-router.patch("/:id", checkAuth(...Object.values(Role)), userControllers.updateUser)
+router.patch("/:id", validateRequest(updateUserZodSchema), checkAuth(...Object.values(Role)), userControllers.updateUser)
 
 export const UserRoutes = router
 ```
+
+## 27-11 Add custom property to Request Parameter of Express, req.user
+
+- We will declare custom type for our express package. since we do not have control over the packages. 
+- we can not handle the package types but we can make custom types for the package.
+- It is needed because if we use a package that do not support this will cause us error. like Surjo Pay has no ts decoration file  
+- Suppose we want to add something more with req. that express do not have. i mean we are extending the Request of express 
+- checkAuth.ts 
+```ts 
+
+import { JwtPayload } from 'jsonwebtoken';
+
+
+
+import { NextFunction, Request, Response } from "express";
+import AppError from '../errorHelpers/AppError';
+import { verifyToken } from '../utils/jwt';
+import { envVars } from '../config/env';
+
+// this is receiving all the role sent (converted into an array of the sent roles) from where the middleware has been called 
+export const checkAuth = (...authRoles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        // we will get the access token from frontend inside headers. foe now we will set in postman headers 
+        const accessToken = req.headers.authorization;
+        if (!accessToken) {
+            throw new AppError(403, "No Token Received")
+        }
+
+        //  if there is token we will verify 
+
+        // const verifiedToken = jwt.verify(accessToken, "secret")
+
+        const verifiedToken = verifyToken(accessToken, envVars.JWT_ACCESS_SECRET) as JwtPayload
+
+        // console.log(verifiedToken)
+
+        // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+
+        // authRoles = ["ADMIN", "SUPER_ADMIN"]
+        if (!authRoles.includes(verifiedToken.role)) {
+            throw new AppError(403, "You Are Not Permitted To View This Route ")
+        }
+
+        /*
+        const accessToken: string | undefined 
+        token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
+        */
+
+        // we will make the verified token to go outside
+
+        // req has its own method like we can get req.bdy, req.params. req.query, req.headers. but we will not get req.user for this we need custom package. of user. 
+        req.user = verifiedToken
+
+        next()
+    } catch (error) {
+        next(error)
+    }
+}
+```
+
+- inside this we want to set the token in req.user. but req.user do not exist
+- to do this we need to custom the express type as its coming from express. we have to interface that is globally accessible 
+
+- interfaces -> index.d.ts 
+```ts 
+import { JwtPayload } from "jsonwebtoken";
+
+declare global {
+    namespace Express { // area or the thing coming from 
+        interface Request { // the field we want to extend 
+            user: JwtPayload
+        }
+    }
+}
+```
+-  now lets add in tsconfig.json file if do not automatically updates 
+
+```json 
+{
+  "compilerOptions": {
+    ..........
+  },
+//    add this 
+  "includes": [
+    "./src/app/interfaces/index.d.ts"
+  ]
+}
+```
+
+
+
+- As this is extended and check auth is able to set the token inside the req.user
+- so now on we do not need to call verify token every time we will get it directly from check auth directly.  
+
+```ts 
+    // we will get the verified token directly from checkauth now 
+    const verifiedToken = req.user
+```
+
+- user.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+import { catchAsync } from "../../catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { verifyToken } from '../../utils/jwt';
+import { envVars } from "../../config/env";
+import { JwtPayload } from "jsonwebtoken";
+
+
+const createUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = await userServices.createUser(req.body)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        data: user
+    })
+})
+const updateUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.params.id
+    const token = req.headers.authorization
+    // const verifiedToken = verifyToken(token as string, envVars.JWT_ACCESS_SECRET) as JwtPayload
+    // we will get the verified token directly from checkauth now 
+    const verifiedToken = req.user
+
+    const payload = req.body
+    const user = await userServices.updateUser(userId, payload, verifiedToken)
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Updated Successfully",
+        data: user
+    })
+})
+
+const getAllUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const result = await userServices.getAllUsers()
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "User Created Successfully",
+        meta: result.meta,
+        data: result.data,
+
+    })
+})
+
+export const userControllers = {
+    createUser,
+    getAllUsers,
+    updateUser
+}
+```
+
+ 
