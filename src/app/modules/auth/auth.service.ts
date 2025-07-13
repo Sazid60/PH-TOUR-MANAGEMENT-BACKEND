@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import AppError from "../../errorHelpers/AppError"
-import { IUser } from "../user/user.interface"
+import { IsActive, IUser } from "../user/user.interface"
 import httpStatus from 'http-status-codes';
 import { User } from "../user/user.model";
 import bcrypt from "bcryptjs";
-import { generateToken } from "../../utils/jwt";
+import { generateToken, verifyToken } from "../../utils/jwt";
 import { envVars } from "../../config/env";
+import { createUserToken } from "../../utils/userToken";
+import { JwtPayload } from "jsonwebtoken";
 
 
 const credentialsLogin = async (payload: Partial<IUser>) => {
@@ -24,27 +26,59 @@ const credentialsLogin = async (payload: Partial<IUser>) => {
 
     // generating access token 
 
+    // const jwtPayload = {
+    //     userId: isUserExist._id,
+    //     email: isUserExist.email,
+    //     role: isUserExist.role
+    // }
+    // // const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
+    // const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+    // // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
+
+    // const refreshToken = generateToken(jwtPayload, envVars.JWT_REFRESH_SECRET, envVars.JWT_REFRESH_EXPIRES)
+
+    // we are not sending the password in response so deleted. 
+
+    const userTokens = createUserToken(isUserExist)
+
+    const { password: pass, ...rest } = isUserExist.toObject()
+    return {
+        accessToken: userTokens.accessToken,
+        refreshToken: userTokens.refreshToken,
+        user: rest
+    }
+}
+
+
+const getNewAccessToken = async (refreshToken: string) => {
+    const verifiedRefreshToken = verifyToken(refreshToken, envVars.JWT_REFRESH_SECRET) as JwtPayload
+    // we do not have to check the verified status and throw error because if not verified it automatically send error . so no need to write if else 
+
+    const isUserExist = await User.findOne({ email: verifiedRefreshToken.email })
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+    }
+
+    if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+        throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+    }
+    if (isUserExist.isDeleted) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+    }
+    // generating access token 
     const jwtPayload = {
         userId: isUserExist._id,
         email: isUserExist.email,
         role: isUserExist.role
     }
-    // const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
     const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
-
-    // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
-
-    const refreshToken = generateToken(jwtPayload, envVars.JWT_REFRESH_SECRET, envVars.JWT_REFRESH_EXPIRES)
-
-    // we are not sending the password in response so deleted. 
-    const { password: pass, ...rest } = isUserExist
     return {
-        accessToken,
-        refreshToken,
-        user: rest
+        accessToken
     }
 }
 
 export const AuthServices = {
-    credentialsLogin
+    credentialsLogin,
+    getNewAccessToken
 }
