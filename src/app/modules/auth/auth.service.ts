@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import AppError from "../../errorHelpers/AppError"
 import { IUser } from "../user/user.interface"
 import httpStatus from 'http-status-codes';
@@ -33,8 +34,14 @@ const credentialsLogin = async (payload: Partial<IUser>) => {
 
     // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
 
+    const refreshToken = generateToken(jwtPayload, envVars.JWT_REFRESH_SECRET, envVars.JWT_REFRESH_EXPIRES)
+
+    // we are not sending the password in response so deleted. 
+    const { password: pass, ...rest } = isUserExist
     return {
-        accessToken
+        accessToken,
+        refreshToken,
+        user: rest
     }
 }
 
