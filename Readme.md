@@ -1,4 +1,4 @@
-# PH-TOUR-MANAGEMENT-BACKEND-1
+# PH-TOUR-MANAGEMENT-BACKEND-2
 - will do zod validation 
 - Email Password based custom authentication 
 - Role based authorization using jwt 
