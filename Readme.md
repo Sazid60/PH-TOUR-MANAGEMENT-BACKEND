@@ -341,3 +341,141 @@ export const AuthServices = {
     getNewAccessToken
 }
 ```
+
+## 28-3 Set the accessToken and refreshToken in Cookies
+- keeping token in local storage is not safe. normal convention wise we will store the token in cookies 
+- While Login we will set the refresh token inside the cookies. We will set the cookies in `response` while login. from the response we will set the refresh token inside cookies. 
+- While refreshing the token we will get the `refresh token` from `request`. 
+- While logging in, the server will generate a refresh token and send it to the client by setting it in an HTTP-only cookie via the response. Later, when the client requests a new access token, the refresh token will be retrieved from the cookies in the incoming request.
+
+#### Lets set the refresh token inside the cookies first 
+
+
+```ts 
+const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const loginInfo = await AuthServices.credentialsLogin(req.body)
+
+    res.cookie("refreshToken", loginInfo.refreshToken,
+        {
+            httpOnly: true, // this is for setting the cookies in frontend 
+            secure: false //because for security issue frontend normally do not allow to set cookies because backend and frontend have two different live server 
+        }
+    )
+
+    // (method) Response<any, Record<string, any>, number>.cookie(name: string, val: string, options: CookieOptions): Response<any, Record<string, any>> (+2 overloads)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged In Successfully",
+        data: loginInfo
+    })
+})
+```
+
+#### Now We Need a Cookie Parser for parsing the cookies
+- Install Cookie Parser 
+```
+npm i cookie-parser
+```
+- Install Cookie Parser Type Declaration
+
+```
+npm install --save @types/cookie-parser
+```
+
+- add the cookie parser in app.ts 
+
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
+import notFound from "./app/middlewares/notFound"
+import cookieParser from "cookie-parser"
+
+
+const app = express()
+
+app.use(cookieParser()) // cookie parser added
+app.use(express.json())
+app.use(cors())
+
+app.use("/api/v1", router)
+
+// using the global error handler 
+app.use(globalErrorHandler)
+
+// Using not found route 
+app.use(notFound)
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+export default app
+```
+- we can set the access token in cookies as well 
+- now make get the refresh token auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+
+const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const loginInfo = await AuthServices.credentialsLogin(req.body)
+
+    res.cookie("accessToken", loginInfo.accessToken,
+        {
+            httpOnly: true, 
+            secure: false 
+        }
+    )
+    res.cookie("refreshToken", loginInfo.refreshToken,
+        {
+            httpOnly: true, // this is for setting the cookies in frontend 
+            secure: false //because for security issue frontend normally do not allow to set cookies because backend and frontend have two different live server 
+        }
+    )
+
+    // (method) Response<any, Record<string, any>, number>.cookie(name: string, val: string, options: CookieOptions): Response<any, Record<string, any>> (+2 overloads)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged In Successfully",
+        data: loginInfo
+    })
+})
+const getNewAccessToken = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const refreshToken = req.cookies.refreshToken
+    // const refreshToken = req.headers.authorization as string // only used for test purpose 
+    if (!refreshToken) {
+        throw new AppError(httpStatus.BAD_REQUEST, "No Access Token Received")
+    }
+    const tokenInfo = await AuthServices.getNewAccessToken(refreshToken)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged In Successfully",
+        data: tokenInfo
+    })
+})
+
+export const AuthControllers = {
+    credentialsLogin,
+    getNewAccessToken
+}
+```

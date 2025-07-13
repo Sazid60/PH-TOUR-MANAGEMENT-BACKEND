@@ -5,9 +5,25 @@ import { sendResponse } from "../../utils/sendResponse"
 import httpStatus from 'http-status-codes';
 import { AuthServices } from "./auth.service";
 import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
 
 const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     const loginInfo = await AuthServices.credentialsLogin(req.body)
+
+    res.cookie("accessToken", loginInfo.accessToken,
+        {
+            httpOnly: true,
+            secure: false
+        }
+    )
+    res.cookie("refreshToken", loginInfo.refreshToken,
+        {
+            httpOnly: true, // this is for setting the cookies in frontend 
+            secure: false //because for security issue frontend normally do not allow to set cookies because backend and frontend have two different live server 
+        }
+    )
+
+    // (method) Response<any, Record<string, any>, number>.cookie(name: string, val: string, options: CookieOptions): Response<any, Record<string, any>> (+2 overloads)
 
     sendResponse(res, {
         success: true,
@@ -17,8 +33,11 @@ const credentialsLogin = catchAsync(async (req: Request, res: Response, next: Ne
     })
 })
 const getNewAccessToken = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-    // const refreshToken = req.cookies.refreshToken
-    const refreshToken = req.headers.authorization as string
+    const refreshToken = req.cookies.refreshToken
+    // const refreshToken = req.headers.authorization as string // only used for test purpose 
+    if (!refreshToken) {
+        throw new AppError(httpStatus.BAD_REQUEST, "No Access Token Received")
+    }
     const tokenInfo = await AuthServices.getNewAccessToken(refreshToken)
 
     sendResponse(res, {
