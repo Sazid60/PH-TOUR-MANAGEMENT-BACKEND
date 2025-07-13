@@ -6,7 +6,7 @@ import { User } from "../user/user.model";
 import bcrypt from "bcryptjs";
 import { generateToken, verifyToken } from "../../utils/jwt";
 import { envVars } from "../../config/env";
-import { createUserToken } from "../../utils/userToken";
+import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
 import { JwtPayload } from "jsonwebtoken";
 
 
@@ -52,29 +52,32 @@ const credentialsLogin = async (payload: Partial<IUser>) => {
 
 
 const getNewAccessToken = async (refreshToken: string) => {
-    const verifiedRefreshToken = verifyToken(refreshToken, envVars.JWT_REFRESH_SECRET) as JwtPayload
-    // we do not have to check the verified status and throw error because if not verified it automatically send error . so no need to write if else 
+    // const verifiedRefreshToken = verifyToken(refreshToken, envVars.JWT_REFRESH_SECRET) as JwtPayload
+    // // we do not have to check the verified status and throw error because if not verified it automatically send error . so no need to write if else 
 
-    const isUserExist = await User.findOne({ email: verifiedRefreshToken.email })
-    if (!isUserExist) {
-        throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
-    }
+    // const isUserExist = await User.findOne({ email: verifiedRefreshToken.email })
+    // if (!isUserExist) {
+    //     throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+    // }
 
-    if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
-        throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
-    }
-    if (isUserExist.isDeleted) {
-        throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
-    }
-    // generating access token 
-    const jwtPayload = {
-        userId: isUserExist._id,
-        email: isUserExist.email,
-        role: isUserExist.role
-    }
-    const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+    // if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+    //     throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+    // }
+    // if (isUserExist.isDeleted) {
+    //     throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+    // }
+    // // generating access token 
+    // const jwtPayload = {
+    //     userId: isUserExist._id,
+    //     email: isUserExist.email,
+    //     role: isUserExist.role
+    // }
+    // const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+    // generating access token generating works will be done by this function 
+    const newAccessToken = await createNewAccessTokenWithRefreshToken(refreshToken)
     return {
-        accessToken
+        accessToken: newAccessToken
     }
 }
 
