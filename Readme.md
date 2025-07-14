@@ -1009,3 +1009,320 @@ export const AuthControllers = {
     logout
 }
 ```
+
+## 28-6 Implement Reset / Change Password
+- For reset password user must be logged in
+- If User is not logged in and want to change the password , we have to implement forget password facunctionality 
+
+#### For Reset Password 
+- First of all we have to check if the user is authentic. 
+- As we are using checkAuth() in route we our token will be checked and decoded token information will be set to the req.user. (token verification is done here as well her )
+
+- lets doo user verification works done in checkAuth(). so that further we do not have to check every time that exist or not 
+
+- checkAuth.ts 
+```ts 
+
+import { JwtPayload } from 'jsonwebtoken';
+
+
+
+import { NextFunction, Request, Response } from "express";
+import AppError from '../errorHelpers/AppError';
+import { verifyToken } from '../utils/jwt';
+import { envVars } from '../config/env';
+import httpStatus from 'http-status-codes';
+import { IsActive } from '../modules/user/user.interface';
+import { User } from '../modules/user/user.model';
+
+// this is receiving all the role sent (converted into an array of the sent roles) from where the middleware has been called 
+export const checkAuth = (...authRoles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        // we will get the access token from frontend inside headers. for now we will set in postman headers 
+        const accessToken = req.headers.authorization;
+        if (!accessToken) {
+            throw new AppError(403, "No Token Received")
+        }
+
+        //  if there is token we will verify 
+
+        // const verifiedToken = jwt.verify(accessToken, "secret")
+
+        const verifiedToken = verifyToken(accessToken, envVars.JWT_ACCESS_SECRET) as JwtPayload
+
+        // console.log(verifiedToken)
+
+        // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+        const isUserExist = await User.findOne({ email: verifiedToken.email })
+        if (!isUserExist) {
+            throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+        }
+
+        if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+            throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+        }
+        if (isUserExist.isDeleted) {
+            throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+        }
+        // authRoles = ["ADMIN", "SUPER_ADMIN"]
+        if (!authRoles.includes(verifiedToken.role)) {
+            throw new AppError(403, "You Are Not Permitted To View This Route ")
+        }
+
+        /*
+        const accessToken: string | undefined 
+        token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
+        */
+
+        // we will make the verified token to go outside
+
+        // req has its own method like we can get req.bdy, req.params. req.query, req.headers. but we will not get req.user for this we need custom package. of user. 
+        req.user = verifiedToken
+
+        next()
+    } catch (error) {
+        next(error)
+    }
+}
+```
+- now we can work in peace in service layer. 
+
+- auth.route.ts 
+
+```ts 
+import { Router } from "express";
+import { AuthControllers } from "./auth.controller";
+import { checkAuth } from '../../middlewares/checkAuth';
+import { Role } from "../user/user.interface";
+
+const router = Router()
+
+router.post("/login", AuthControllers.credentialsLogin)
+router.post("/refresh-token", AuthControllers.getNewAccessToken)
+router.post("/logout", AuthControllers.logout)
+router.post("/reset-password", checkAuth(...Object.values(Role)), AuthControllers.resetPassword)
+
+export const authRoutes = router
+```
+
+- auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+import { setAuthCookie } from "../../utils/setCookie";
+import bcrypt from 'bcryptjs';
+
+
+const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const loginInfo = await AuthServices.credentialsLogin(req.body)
+
+    // res.cookie("accessToken", loginInfo.accessToken,
+    //     {
+    //         httpOnly: true,
+    //         secure: false
+    //     }
+    // )
+    // res.cookie("refreshToken", loginInfo.refreshToken,
+    //     {
+    //         httpOnly: true, // this is for setting the cookies in frontend 
+    //         secure: false //because for security issue frontend normally do not allow to set cookies because backend and frontend have two different live server 
+    //     }
+    // )
+
+    // both access token and refresh token works will be done by this function 
+    setAuthCookie(res, loginInfo)
+
+    // (method) Response<any, Record<string, any>, number>.cookie(name: string, val: string, options: CookieOptions): Response<any, Record<string, any>> (+2 overloads)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged In Successfully",
+        data: loginInfo
+    })
+})
+const getNewAccessToken = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const refreshToken = req.cookies.refreshToken
+    // const refreshToken = req.headers.authorization as string // only used for test purpose 
+    if (!refreshToken) {
+        throw new AppError(httpStatus.BAD_REQUEST, "No Access Token Received")
+    }
+    const tokenInfo = await AuthServices.getNewAccessToken(refreshToken)
+    // this will set the newly generated access token (generated using refresh token) to the cookies
+
+    setAuthCookie(res, tokenInfo)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "New Access Token Generated Successfully",
+        data: tokenInfo
+    })
+})
+const logout = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    res.clearCookie("accessToken",
+        {
+            httpOnly: true,
+            secure: false,
+            sameSite: "lax"
+        }
+    )
+    res.clearCookie("refreshToken",
+        {
+            httpOnly: true,
+            secure: false,
+            sameSite: "lax"
+        }
+    )
+
+    // (method) Response<any, Record<string, any>, number>.clearCookie(name: string, options?: CookieOptions): Response<any, Record<string, any>>
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged Out Successfully",
+        data: null
+    })
+
+})
+const resetPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const newPassword = req.body.newPassword
+    const oldPassword = req.body.oldPassword
+    const decodedToken = req.user
+
+    await AuthServices.resetPassword(oldPassword, newPassword, decodedToken)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "password Changed Successfully",
+        data: null
+    })
+
+})
+
+
+export const AuthControllers = {
+    credentialsLogin,
+    getNewAccessToken,
+    logout,
+    resetPassword
+}
+```
+
+- auth.service.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import AppError from '../../errorHelpers/AppError';
+import { IsActive, IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken, verifyToken } from "../../utils/jwt";
+import { envVars } from '../../config/env';
+import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
+import { JwtPayload } from "jsonwebtoken";
+
+
+const credentialsLogin = async (payload: Partial<IUser>) => {
+    const { email, password } = payload
+
+    const isUserExist = await User.findOne({ email })
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
+    }
+
+    const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+    if (!isPasswordMatch) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
+    }
+
+    // generating access token 
+
+    // const jwtPayload = {
+    //     userId: isUserExist._id,
+    //     email: isUserExist.email,
+    //     role: isUserExist.role
+    // }
+    // // const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
+    // const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+    // // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
+
+    // const refreshToken = generateToken(jwtPayload, envVars.JWT_REFRESH_SECRET, envVars.JWT_REFRESH_EXPIRES)
+
+    // we are not sending the password in response so deleted. 
+
+    const userTokens = createUserToken(isUserExist)
+
+    const { password: pass, ...rest } = isUserExist.toObject()
+    return {
+        accessToken: userTokens.accessToken,
+        refreshToken: userTokens.refreshToken,
+        user: rest
+    }
+}
+
+
+const getNewAccessToken = async (refreshToken: string) => {
+    // const verifiedRefreshToken = verifyToken(refreshToken, envVars.JWT_REFRESH_SECRET) as JwtPayload
+    // // we do not have to check the verified status and throw error because if not verified it automatically send error . so no need to write if else 
+
+    // const isUserExist = await User.findOne({ email: verifiedRefreshToken.email })
+    // if (!isUserExist) {
+    //     throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+    // }
+
+    // if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+    //     throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+    // }
+    // if (isUserExist.isDeleted) {
+    //     throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+    // }
+    // // generating access token 
+    // const jwtPayload = {
+    //     userId: isUserExist._id,
+    //     email: isUserExist.email,
+    //     role: isUserExist.role
+    // }
+    // const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+    // generating access token generating works will be done by this function 
+    const newAccessToken = await createNewAccessTokenWithRefreshToken(refreshToken)
+    return {
+        accessToken: newAccessToken
+    }
+}
+
+
+const resetPassword = async (oldPassword: string, newPassword: string, decodedToken: JwtPayload) => {
+
+    const user = await User.findById(decodedToken.userId)
+
+    const isOldPasswordMatch = await bcrypt.compare(oldPassword, user!.password as string)
+    if (!isOldPasswordMatch) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "Old Password does not match");
+    }
+
+    user!.password = await bcrypt.hash(newPassword, Number(envVars.BCRYPT_SALT_ROUND))
+
+    user!.save();
+
+}
+export const AuthServices = {
+    credentialsLogin,
+    getNewAccessToken,
+    resetPassword
+}
+```
