@@ -1326,3 +1326,25 @@ export const AuthServices = {
     resetPassword
 }
 ```
+
+
+## 28-7 Third Party Authentication Packages, Passport JS and Setting Up Google Cloud Console
+
+- We will use passport.js for social authentications [passport js](https://www.passportjs.org/)
+- Passport is authentication middleware for Node.js. Extremely flexible and modular, Passport can be unobtrusively dropped in to any Express-based web application. A comprehensive set of strategies support authentication using a username and password, Facebook, Twitter, and more.
+- It Will works like middleware. 
+- we will use `Oauth20` for google login [oAuth20](https://www.passportjs.org/packages/passport-google-oauth20/)
+- so far we have done custom authentication system. we can use passport js for making the custom authentication. [passport-local](https://www.passportjs.org/packages/passport-local/)
+
+#### Setup passport.js 
+
+- install passport js 
+
+``` 
+npm install passport-oauth2
+```
+- go to google cloud -> console -> side bar -> api services -> create a project then go to oAuth concent screen -> create- oAuth Client
+
+[Google Cloud](https://cloud.google.com/)
+
+- SET THE CLIENT_ID AND CLIENT_SECRET to .env  
