@@ -1337,14 +1337,173 @@ export const AuthServices = {
 - so far we have done custom authentication system. we can use passport js for making the custom authentication. [passport-local](https://www.passportjs.org/packages/passport-local/)
 
 #### Setup passport.js 
+- install passport 
 
-- install passport js 
+```
+npm i passport 
+```
+- install passport
 
 ``` 
-npm install passport-oauth2
+npm install passport-google-oauth20
 ```
+```
+npm install passport-local
+```
+- install the dependencies 
+
+```
+npm install -D @types/passport
+```
+```
+npm install -D @types/passport-local
+```
+```
+npm install -D @types/passport-google-oauth20
+```
+
 - go to google cloud -> console -> side bar -> api services -> create a project then go to oAuth concent screen -> create- oAuth Client
 
 [Google Cloud](https://cloud.google.com/)
 
 - SET THE CLIENT_ID AND CLIENT_SECRET to .env  
+- install express session 
+
+```
+npm i express-session 
+```
+- install dependencies 
+
+```
+npm i --save-dev @types/express-session
+```
+
+## 28-8 Configuring Passport JS for Backend and Google Authentication Configuration
+
+- app.ts 
+```ts 
+app.use(expressSession({
+    secret: "Your Secret",
+    resave : false,
+    saveUninitialized: false
+}))
+app.use(passport.initialize()) //for passport js 
+app.use(passport.session())
+```
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
+import notFound from "./app/middlewares/notFound"
+import cookieParser from "cookie-parser"
+import passport from "passport"
+import expressSession from "express-session"
+
+const app = express()
+app.use(expressSession({
+    secret: "Your Secret",
+    resave: false,
+    saveUninitialized: false
+}))
+app.use(passport.initialize()) //for passport js 
+app.use(passport.session())
+app.use(cookieParser()) // cookie parser added
+app.use(express.json())
+app.use(cors())
+
+app.use("/api/v1", router)
+
+// using the global error handler 
+app.use(globalErrorHandler)
+
+// Using not found route 
+app.use(notFound)
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+export default app
+```
+
+- update the env.ts 
+
+```ts 
+import dotenv from "dotenv";
+
+dotenv.config()
+
+interface EnvConfig {
+    PORT: string,
+    DB_URL: string,
+    NODE_ENV: "development" | "production"
+    BCRYPT_SALT_ROUND: string
+    JWT_ACCESS_SECRET: string
+    JWT_ACCESS_EXPIRES: string
+    JWT_REFRESH_SECRET: string
+    JWT_REFRESH_EXPIRES: string
+    SUPER_ADMIN_EMAIL: string
+    SUPER_ADMIN_PASSWORD: string
+    GOOGLE_CLIENT_SECRET: string
+    GOOGLE_CLIENT_ID: string
+    GOOGLE_CALLBACK_URL: string
+    EXPRESS_SESSION_SECRET: string
+    FRONTEND_URL: string
+
+}
+
+const loadEnvVariables = (): EnvConfig => {
+    const requiredEnvVariables: string[] = ["PORT", "DB_URL", "NODE_ENV", "BCRYPT_SALT_ROUND", "JWT_ACCESS_EXPIRES", "JWT_ACCESS_SECRET", "SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "JWT_REFRESH_SECRET", "JWT_REFRESH_EXPIRES", "GOOGLE_CLIENT_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CALLBACK_URL", "EXPRESS_SESSION_SECRET", "FRONTEND_URL"];
+
+    requiredEnvVariables.forEach(key => {
+        if (!process.env[key]) {
+            throw new Error(`Missing require environment variabl ${key}`)
+        }
+    })
+
+    return {
+        PORT: process.env.PORT as string,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        DB_URL: process.env.DB_URL!,
+        NODE_ENV: process.env.NODE_ENV as "development" | "production",
+        BCRYPT_SALT_ROUND: process.env.BCRYPT_SALT_ROUND as string,
+        JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET as string,
+        JWT_ACCESS_EXPIRES: process.env.JWT_ACCESS_EXPIRES as string,
+        JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET as string,
+        JWT_REFRESH_EXPIRES: process.env.JWT_REFRESH_EXPIRES as string,
+        SUPER_ADMIN_EMAIL: process.env.SUPER_ADMIN_EMAIL as string,
+        SUPER_ADMIN_PASSWORD: process.env.SUPER_ADMIN_PASSWORD as string,
+        GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET as string,
+        GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID as string,
+        GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL as string,
+        EXPRESS_SESSION_SECRET: process.env.EXPRESS_SESSION_SECRET as string,
+        FRONTEND_URL: process.env.FRONTEND_URL as string
+
+    }
+}
+
+export const envVars = loadEnvVariables()
+```
+
+- config -> passport.ts 
+
+```ts 
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { envVars } from "./env";
+
+passport.use(
+    new GoogleStrategy(
+        {
+            clientID: envVars.GOOGLE_CLIENT_ID,
+            clientSecret: envVars.GOOGLE_CLIENT_SECRET,
+            callbackURL: envVars.GOOGLE_CALLBACK_URL
+        }, async() => {}
+    ))
+```

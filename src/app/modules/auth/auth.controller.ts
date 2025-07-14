@@ -8,6 +8,7 @@ import { catchAsync } from "../../utils/catchAsync";
 import AppError from "../../errorHelpers/AppError";
 import { setAuthCookie } from "../../utils/setCookie";
 import bcrypt from 'bcryptjs';
+import { JwtPayload } from "jsonwebtoken";
 
 
 const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
@@ -87,7 +88,7 @@ const resetPassword = catchAsync(async (req: Request, res: Response, next: NextF
     const oldPassword = req.body.oldPassword
     const decodedToken = req.user
 
-    await AuthServices.resetPassword(oldPassword, newPassword, decodedToken)
+    await AuthServices.resetPassword(oldPassword, newPassword, decodedToken as JwtPayload)
 
 
     sendResponse(res, {
