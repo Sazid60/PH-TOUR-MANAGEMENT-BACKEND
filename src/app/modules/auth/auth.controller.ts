@@ -102,9 +102,14 @@ const resetPassword = catchAsync(async (req: Request, res: Response, next: NextF
 
 })
 const googleCallbackController = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    // wer are getting this because of  return done(null, user) // set by the passport.js 
     const user = req.user;
 
-    console.log(user)
+    let redirectTo = req.query.state ? req.query.state as string : ""
+
+    if (redirectTo.startsWith("/")) {
+        redirectTo = redirectTo.slice(1) // /booking => booking , => "/" => ""
+    }
 
     if (!user) {
         throw new AppError(httpStatus.NOT_FOUND, "User Not Found")
@@ -121,7 +126,8 @@ const googleCallbackController = catchAsync(async (req: Request, res: Response, 
     //     data: null
     // })
 
-    res.redirect(`${envVars.FRONTEND_URL}/booking`)
+    // after successful login it will redirect the home page to this link
+    res.redirect(`${envVars.FRONTEND_URL}/${redirectTo}`)
 
 })
 

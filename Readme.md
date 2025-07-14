@@ -1848,7 +1848,7 @@ const resetPassword = catchAsync(async (req: Request, res: Response, next: NextF
 
 })
 const googleCallbackController = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-    const user = req.user;
+    const user = req.user;  // wer are getting this because of  return done(null, user) // set by the passport.js 
 
     console.log(user)
 
@@ -1894,3 +1894,201 @@ http://localhost:5000/api/v1/auth/google
 ```
 - redirect is kept because if unauthenticated we will redirect to login page and after login successful it will add the `redirect=/booking ` to backend query. This will give us control of in which route the used wanted to go 
 - After getting the `redirect=/booking ` in backend we will set in `state` named property of backend ` res.redirect(`${envVars.FRONTEND_URL}/booking`)`
+
+
+## 28-11 Redirect user to the desired route in frontend after successful authentication
+
+- /booking -> /login -> succesful google login -> /booking frontend
+- /login -> succesful google login -> / frontend
+
+- auth.route.ts 
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response, Router } from "express";
+import { AuthControllers } from "./auth.controller";
+import { checkAuth } from '../../middlewares/checkAuth';
+import { Role } from "../user/user.interface";
+import passport from "passport";
+
+const router = Router()
+
+router.post("/login", AuthControllers.credentialsLogin)
+router.post("/refresh-token", AuthControllers.getNewAccessToken)
+router.post("/logout", AuthControllers.logout)
+router.post("/reset-password", checkAuth(...Object.values(Role)), AuthControllers.resetPassword)
+
+//  /booking -> /login -> successful google login -> /booking frontend
+// /login -> successful google login -> / frontend
+router.get("/google", async (req: Request, res: Response, next: NextFunction) => {
+    const redirect = req.query.redirect || "/"
+    passport.authenticate("google", { scope: ["profile", "email"], state: redirect as string })(req, res, next)
+})
+// this kept get because the authentication is done by google and we have nothing to send in body 
+
+// api/v1/auth/google/callback?state=/booking this redirect state will be added in the url by the previous auth login route
+router.get("/google/callback", passport.authenticate("google", { failureRedirect: "/login" }), AuthControllers.googleCallbackController)
+
+// this is for setting the cookies 
+export const authRoutes = router
+
+```
+- auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+import { setAuthCookie } from "../../utils/setCookie";
+import bcrypt from 'bcryptjs';
+import { JwtPayload } from "jsonwebtoken";
+import { createUserToken } from "../../utils/userToken";
+import { envVars } from "../../config/env";
+
+
+const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const loginInfo = await AuthServices.credentialsLogin(req.body)
+
+    // res.cookie("accessToken", loginInfo.accessToken,
+    //     {
+    //         httpOnly: true,
+    //         secure: false
+    //     }
+    // )
+    // res.cookie("refreshToken", loginInfo.refreshToken,
+    //     {
+    //         httpOnly: true, // this is for setting the cookies in frontend 
+    //         secure: false //because for security issue frontend normally do not allow to set cookies because backend and frontend have two different live server 
+    //     }
+    // )
+
+    // both access token and refresh token works will be done by this function 
+    setAuthCookie(res, loginInfo)
+
+    // (method) Response<any, Record<string, any>, number>.cookie(name: string, val: string, options: CookieOptions): Response<any, Record<string, any>> (+2 overloads)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged In Successfully",
+        data: loginInfo
+    })
+})
+const getNewAccessToken = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const refreshToken = req.cookies.refreshToken
+    // const refreshToken = req.headers.authorization as string // only used for test purpose 
+    if (!refreshToken) {
+        throw new AppError(httpStatus.BAD_REQUEST, "No Access Token Received")
+    }
+    const tokenInfo = await AuthServices.getNewAccessToken(refreshToken)
+    // this will set the newly generated access token (generated using refresh token) to the cookies
+
+    setAuthCookie(res, tokenInfo)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "New Access Token Generated Successfully",
+        data: tokenInfo
+    })
+})
+const logout = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    res.clearCookie("accessToken",
+        {
+            httpOnly: true,
+            secure: false,
+            sameSite: "lax"
+        }
+    )
+    res.clearCookie("refreshToken",
+        {
+            httpOnly: true,
+            secure: false,
+            sameSite: "lax"
+        }
+    )
+
+    // (method) Response<any, Record<string, any>, number>.clearCookie(name: string, options?: CookieOptions): Response<any, Record<string, any>>
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged Out Successfully",
+        data: null
+    })
+
+})
+const resetPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const newPassword = req.body.newPassword
+    const oldPassword = req.body.oldPassword
+    const decodedToken = req.user
+
+    await AuthServices.resetPassword(oldPassword, newPassword, decodedToken as JwtPayload)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "password Changed Successfully",
+        data: null
+    })
+
+})
+const googleCallbackController = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    // wer are getting this because of  return done(null, user) // set by the passport.js 
+    const user = req.user;
+
+    let redirectTo = req.query.state ? req.query.state as string : ""
+
+    if (redirectTo.startsWith("/")) {
+        redirectTo = redirectTo.slice(1) // /booking => booking , => "/" => ""
+    }
+
+    if (!user) {
+        throw new AppError(httpStatus.NOT_FOUND, "User Not Found")
+    }
+
+    const tokenInfo = createUserToken(user)
+
+    setAuthCookie(res, tokenInfo)
+
+    // sendResponse(res, {
+    //     success: true,
+    //     statusCode: httpStatus.OK,
+    //     message: "password Changed Successfully",
+    //     data: null
+    // })
+
+    // after successful login it will redirect the home page to this link
+    res.redirect(`${envVars.FRONTEND_URL}/${redirectTo}`)
+
+})
+
+
+export const AuthControllers = {
+    credentialsLogin,
+    getNewAccessToken,
+    logout,
+    resetPassword,
+    googleCallbackController,
+}
+
+```
+
+- If backend is hit with this url this will take to login page 
+
+```
+http://localhost:5000/api/v1/auth/google?redirect=/booking
+```
+
+- after successful login it will redirect the home page to this link with the help of controller 
+
+```
+http://localhost:5173/booking
+```
+
+- if any redirect is not set it will redirect to home page 
