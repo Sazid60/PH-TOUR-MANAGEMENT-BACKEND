@@ -7,11 +7,14 @@ import { NextFunction, Request, Response } from "express";
 import AppError from '../errorHelpers/AppError';
 import { verifyToken } from '../utils/jwt';
 import { envVars } from '../config/env';
+import httpStatus from 'http-status-codes';
+import { IsActive } from '../modules/user/user.interface';
+import { User } from '../modules/user/user.model';
 
 // this is receiving all the role sent (converted into an array of the sent roles) from where the middleware has been called 
 export const checkAuth = (...authRoles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
     try {
-        // we will get the access token from frontend inside headers. foe now we will set in postman headers 
+        // we will get the access token from frontend inside headers. for now we will set in postman headers 
         const accessToken = req.headers.authorization;
         if (!accessToken) {
             throw new AppError(403, "No Token Received")
@@ -26,7 +29,17 @@ export const checkAuth = (...authRoles: string[]) => async (req: Request, res: R
         // console.log(verifiedToken)
 
         // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+        const isUserExist = await User.findOne({ email: verifiedToken.email })
+        if (!isUserExist) {
+            throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+        }
 
+        if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+            throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+        }
+        if (isUserExist.isDeleted) {
+            throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+        }
         // authRoles = ["ADMIN", "SUPER_ADMIN"]
         if (!authRoles.includes(verifiedToken.role)) {
             throw new AppError(403, "You Are Not Permitted To View This Route ")
