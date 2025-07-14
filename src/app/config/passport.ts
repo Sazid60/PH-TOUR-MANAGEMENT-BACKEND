@@ -1,8 +1,10 @@
-import passport from "passport";
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Strategy as GoogleStrategy, Profile, VerifyCallback } from "passport-google-oauth20";
 import { envVars } from "./env";
 import { User } from "../modules/user/user.model";
 import { Role } from "../modules/user/user.interface";
+import passport from "passport";
 
 passport.use(
     new GoogleStrategy(
@@ -36,7 +38,7 @@ passport.use(
                     })
                 }
 
-                return done(null, user)
+                return done(null, user) // will set the user to req.user
 
             } catch (error) {
                 console.log("Google Strategy Error", error)
@@ -53,3 +55,23 @@ passport.use(
 // Bridge == Google -> user db store -> token
 //Custom -> email , password, role : USER, name... -> registration -> DB -> 1 User create
 //Google -> req -> google -> successful : Jwt Token : Role , email -> DB - Store -> token - api access
+
+// serialize the passport 
+
+// Serializes the user (stores minimal info like user ID in the session)
+
+passport.serializeUser((user: any, done: (err: any, id?: unknown) => void) => {
+    done(null, user._id)
+})
+
+//Deserializes the user (retrieves the full user object from the DB based on that ID for each request)
+
+passport.deserializeUser(async (id: string, done: any) => {
+    try {
+        const user = await User.findById(id);
+        done(null, user)
+    } catch (error) {
+        console.log(error);
+        done(error)
+    }
+})

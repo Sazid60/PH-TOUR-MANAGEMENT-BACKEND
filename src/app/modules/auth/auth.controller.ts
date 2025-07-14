@@ -9,6 +9,8 @@ import AppError from "../../errorHelpers/AppError";
 import { setAuthCookie } from "../../utils/setCookie";
 import bcrypt from 'bcryptjs';
 import { JwtPayload } from "jsonwebtoken";
+import { createUserToken } from "../../utils/userToken";
+import { envVars } from "../../config/env";
 
 
 const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
@@ -99,11 +101,35 @@ const resetPassword = catchAsync(async (req: Request, res: Response, next: NextF
     })
 
 })
+const googleCallbackController = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = req.user;
+
+    console.log(user)
+
+    if (!user) {
+        throw new AppError(httpStatus.NOT_FOUND, "User Not Found")
+    }
+
+    const tokenInfo = createUserToken(user)
+
+    setAuthCookie(res, tokenInfo)
+
+    // sendResponse(res, {
+    //     success: true,
+    //     statusCode: httpStatus.OK,
+    //     message: "password Changed Successfully",
+    //     data: null
+    // })
+
+    res.redirect(`${envVars.FRONTEND_URL}/booking`)
+
+})
 
 
 export const AuthControllers = {
     credentialsLogin,
     getNewAccessToken,
     logout,
-    resetPassword
+    resetPassword,
+    googleCallbackController,
 }

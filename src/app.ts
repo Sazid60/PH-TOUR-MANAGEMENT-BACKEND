@@ -10,6 +10,8 @@ import cookieParser from "cookie-parser"
 import passport from "passport"
 import expressSession from "express-session"
 
+import "./app/config/passport" //we have to let the app.ts know that passport.ts file exists 
+
 const app = express()
 app.use(expressSession({
     secret: "Your Secret",

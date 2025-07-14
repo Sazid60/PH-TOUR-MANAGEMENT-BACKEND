@@ -1557,7 +1557,7 @@ passport.use(
                     })
                 }
 
-                return done(null, user)
+                return done(null, user) // will set the user to req.user
 
             } catch (error) {
                 console.log("Google Strategy Error", error)
@@ -1576,4 +1576,321 @@ passport.use(
 //Google -> req -> google -> successful : Jwt Token : Role , email -> DB - Store -> token - api access
 ```
 
+## 28-10 Implement Passport JS For Google Authentication in routes and controllers
 
+- now lets serialize and deserialize the passport.ts 
+-  Serializes the user (stores minimal info like user ID in the session)
+- Deserializes the user (retrieves the full user object from the DB based on that ID for each request)
+
+```ts 
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Strategy as GoogleStrategy, Profile, VerifyCallback } from "passport-google-oauth20";
+import { envVars } from "./env";
+import { User } from "../modules/user/user.model";
+import { Role } from "../modules/user/user.interface";
+import passport from "passport";
+
+passport.use(
+    new GoogleStrategy(
+        {
+            clientID: envVars.GOOGLE_CLIENT_ID,
+            clientSecret: envVars.GOOGLE_CLIENT_SECRET,
+            callbackURL: envVars.GOOGLE_CALLBACK_URL
+        }, async (accessToken: string, refreshToken: string, profile: Profile, done: VerifyCallback) => {
+            try {
+
+                const email = profile.emails?.[0].value
+                if (!email) {
+                    return done(null, false, { message: "No Email Found !" }) //its like throw new app error and passport has its own 
+                }
+
+                let user = await User.findOne({ email })
+
+                if (!user) {
+                    user = await User.create({
+                        email,
+                        name: profile.displayName,
+                        picture: profile.photos?.[0].value,
+                        role: Role.USER,
+                        isVerified: true,
+                        auths: [
+                            {
+                                provider: "google",
+                                providerId: profile.id
+                            }
+                        ]
+                    })
+                }
+
+                return done(null, user) // will set the user to req.user
+
+            } catch (error) {
+                console.log("Google Strategy Error", error)
+
+                return done(error)
+            }
+        }
+    ))
+
+
+
+// frontend localhost:5173/login?redirect=/booking -> localhost:5000/api/v1/auth/google?redirect=/booking -> passport -> Google OAuth Consent -> gmail login -> successful -> callback url localhost:5000/api/v1/auth/google/callback -> db store -> token
+
+// Bridge == Google -> user db store -> token
+//Custom -> email , password, role : USER, name... -> registration -> DB -> 1 User create
+//Google -> req -> google -> successful : Jwt Token : Role , email -> DB - Store -> token - api access
+
+// serialize the passport 
+
+// Serializes the user (stores minimal info like user ID in the session)
+
+passport.serializeUser((user: any, done: (err: any, id?: unknown) => void) => {
+    done(null, user._id)
+})
+
+//Deserializes the user (retrieves the full user object from the DB based on that ID for each request)
+
+passport.deserializeUser(async (id: string, done: any) => {
+    try {
+        const user = await User.findById(id);
+        done(null, user)
+    } catch (error) {
+        console.log(error);
+        done(error)
+    }
+})
+```
+
+- we have to let the app.ts know that passport.ts file exists 
+
+```ts 
+import "./app/config/passport"
+```
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
+import notFound from "./app/middlewares/notFound"
+import cookieParser from "cookie-parser"
+import passport from "passport"
+import expressSession from "express-session"
+
+import "./app/config/passport" //we have to let the app.ts know that passport.ts file exists 
+
+const app = express()
+app.use(expressSession({
+    secret: "Your Secret",
+    resave: false,
+    saveUninitialized: false
+}))
+app.use(passport.initialize()) //for passport js 
+app.use(passport.session())
+app.use(cookieParser()) // cookie parser added
+app.use(express.json())
+app.use(cors())
+
+app.use("/api/v1", router)
+
+// using the global error handler 
+app.use(globalErrorHandler)
+
+// Using not found route 
+app.use(notFound)
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+export default app
+```
+
+- auth.route.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response, Router } from "express";
+import { AuthControllers } from "./auth.controller";
+import { checkAuth } from '../../middlewares/checkAuth';
+import { Role } from "../user/user.interface";
+import passport from "passport";
+
+const router = Router()
+
+router.post("/login", AuthControllers.credentialsLogin)
+router.post("/refresh-token", AuthControllers.getNewAccessToken)
+router.post("/logout", AuthControllers.logout)
+router.post("/reset-password", checkAuth(...Object.values(Role)), AuthControllers.resetPassword)
+
+
+router.get("/google", async (req: Request, res: Response, next: NextFunction) => {
+    passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next)
+})
+// this kept get because the authentication is done by google and we have nothing to send in body 
+
+router.get("/google/callback", passport.authenticate("google", { failureRedirect: "/login" }), AuthControllers.googleCallbackController)
+
+// this is for setting the cookies 
+export const authRoutes = router
+```
+
+- auth.controller.ts 
+
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+import { setAuthCookie } from "../../utils/setCookie";
+import bcrypt from 'bcryptjs';
+import { JwtPayload } from "jsonwebtoken";
+import { createUserToken } from "../../utils/userToken";
+import { envVars } from "../../config/env";
+
+
+const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const loginInfo = await AuthServices.credentialsLogin(req.body)
+
+    // res.cookie("accessToken", loginInfo.accessToken,
+    //     {
+    //         httpOnly: true,
+    //         secure: false
+    //     }
+    // )
+    // res.cookie("refreshToken", loginInfo.refreshToken,
+    //     {
+    //         httpOnly: true, // this is for setting the cookies in frontend 
+    //         secure: false //because for security issue frontend normally do not allow to set cookies because backend and frontend have two different live server 
+    //     }
+    // )
+
+    // both access token and refresh token works will be done by this function 
+    setAuthCookie(res, loginInfo)
+
+    // (method) Response<any, Record<string, any>, number>.cookie(name: string, val: string, options: CookieOptions): Response<any, Record<string, any>> (+2 overloads)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged In Successfully",
+        data: loginInfo
+    })
+})
+const getNewAccessToken = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const refreshToken = req.cookies.refreshToken
+    // const refreshToken = req.headers.authorization as string // only used for test purpose 
+    if (!refreshToken) {
+        throw new AppError(httpStatus.BAD_REQUEST, "No Access Token Received")
+    }
+    const tokenInfo = await AuthServices.getNewAccessToken(refreshToken)
+    // this will set the newly generated access token (generated using refresh token) to the cookies
+
+    setAuthCookie(res, tokenInfo)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "New Access Token Generated Successfully",
+        data: tokenInfo
+    })
+})
+const logout = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    res.clearCookie("accessToken",
+        {
+            httpOnly: true,
+            secure: false,
+            sameSite: "lax"
+        }
+    )
+    res.clearCookie("refreshToken",
+        {
+            httpOnly: true,
+            secure: false,
+            sameSite: "lax"
+        }
+    )
+
+    // (method) Response<any, Record<string, any>, number>.clearCookie(name: string, options?: CookieOptions): Response<any, Record<string, any>>
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged Out Successfully",
+        data: null
+    })
+
+})
+const resetPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const newPassword = req.body.newPassword
+    const oldPassword = req.body.oldPassword
+    const decodedToken = req.user
+
+    await AuthServices.resetPassword(oldPassword, newPassword, decodedToken as JwtPayload)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "password Changed Successfully",
+        data: null
+    })
+
+})
+const googleCallbackController = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const user = req.user;
+
+    console.log(user)
+
+    if (!user) {
+        throw new AppError(httpStatus.NOT_FOUND, "User Not Found")
+    }
+
+    const tokenInfo = createUserToken(user)
+
+    setAuthCookie(res, tokenInfo)
+
+    // sendResponse(res, {
+    //     success: true,
+    //     statusCode: httpStatus.OK,
+    //     message: "password Changed Successfully",
+    //     data: null
+    // })
+
+    res.redirect(`${envVars.FRONTEND_URL}/booking`)
+
+})
+
+
+export const AuthControllers = {
+    credentialsLogin,
+    getNewAccessToken,
+    logout,
+    resetPassword,
+    googleCallbackController,
+}
+```
+
+- hit this route to access the google login
+
+```
+http://localhost:5000/api/v1/auth/google
+```
+
+- In frontend we will hit like this 
+
+```
+ frontend localhost:5173/login?redirect=/booking 
+```
+- redirect is kept because if unauthenticated we will redirect to login page and after login successful it will add the `redirect=/booking ` to backend query. This will give us control of in which route the used wanted to go 
+- After getting the `redirect=/booking ` in backend we will set in `state` named property of backend ` res.redirect(`${envVars.FRONTEND_URL}/booking`)`
