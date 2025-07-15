@@ -11,15 +11,18 @@ import passport from "passport"
 import expressSession from "express-session"
 
 import "./app/config/passport" //we have to let the app.ts know that passport.ts file exists 
+import { envVars } from "./app/config/env"
 
 const app = express()
+
 app.use(expressSession({
-    secret: "Your Secret",
-    resave: false,
-    saveUninitialized: false
+    secret: envVars.EXPRESS_SESSION_SECRET,
+    resave: false, // Don’t save the session again if nothing changed.
+    saveUninitialized: false // Don’t create empty sessions for users who haven’t logged in yet.
 }))
-app.use(passport.initialize()) //for passport js 
-app.use(passport.session())
+app.use(passport.initialize()) // This sets up Passport in your Express app.
+app.use(passport.session()) // This tells Passport to use sessions to store login info (so the user stays logged in between requests).
+
 app.use(cookieParser()) // cookie parser added
 app.use(express.json())
 app.use(cors())

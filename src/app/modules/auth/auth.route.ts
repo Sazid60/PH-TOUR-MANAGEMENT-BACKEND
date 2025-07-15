@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import { NextFunction, Request, Response, Router } from "express";
 import { AuthControllers } from "./auth.controller";
 import { checkAuth } from '../../middlewares/checkAuth';

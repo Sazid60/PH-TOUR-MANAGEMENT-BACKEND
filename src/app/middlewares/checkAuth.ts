@@ -11,11 +11,14 @@ import httpStatus from 'http-status-codes';
 import { IsActive } from '../modules/user/user.interface';
 import { User } from '../modules/user/user.model';
 
+// ["ADMIN", "SUER_ADMIN"]
+
 // this is receiving all the role sent (converted into an array of the sent roles) from where the middleware has been called 
 export const checkAuth = (...authRoles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
     try {
         // we will get the access token from frontend inside headers. for now we will set in postman headers 
         const accessToken = req.headers.authorization;
+
         if (!accessToken) {
             throw new AppError(403, "No Token Received")
         }

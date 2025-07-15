@@ -1377,18 +1377,24 @@ npm i express-session
 ```
 npm i --save-dev @types/express-session
 ```
+#### Why express Session is required?
+- It's a tool that helps your Express app remember who a user is between different pages or actions.
+- Because the internet doesn't remember you.
+- When you open a new page or click a button, the server treats you like a new person every time.
+- So if a user logs in, the server will forget they're logged in on the next request unless we store that info somewhere.
+
 
 ## 28-8 Configuring Passport JS for Backend and Google Authentication Configuration
 
 - app.ts 
 ```ts 
 app.use(expressSession({
-    secret: "Your Secret",
-    resave : false,
-    saveUninitialized: false
+    secret: "Your Secret", 
+    resave : false, //Don’t save the session again if nothing changed.
+    saveUninitialized: false // Don’t create empty sessions for users who haven’t logged in yet.
 }))
-app.use(passport.initialize()) //for passport js 
-app.use(passport.session())
+app.use(passport.initialize()) // This sets up Passport in your Express app.
+app.use(passport.session()) // This tells Passport to use sessions to store login info (so the user stays logged in between requests).
 ```
 ```ts 
 
