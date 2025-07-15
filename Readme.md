@@ -1516,7 +1516,9 @@ passport.use(
 
 ## 28-9 Complete Google Authentication Configuration
 - lets understand the google authentication work flow now. 
--  frontend localhost:5173/login?redirect=/booking -> localhost:5000/api/v1/auth/google?redirect=/booking -> passport -> Google OAuth Consent -> gmail login -> successful -> callback url localhost:5000/api/v1/auth/google/callback -> db store -> token
+-  frontend localhost:5173/login?redirect=/booking -> localhost:5000/api/v1/auth/google?redirect=/booking -> passport -> Google OAuth Consent -> gmail login -> successful -> after successful login will send to callback url localhost:5000/api/v1/auth/google/callback -> db store -> token
+- using the callback api we will create token, and set the token to cookies 
+
 
 - Bridge == Google -> user db store -> token
 - Custom -> email , password, role : USER, name... -> registration -> DB -> 1 User create
