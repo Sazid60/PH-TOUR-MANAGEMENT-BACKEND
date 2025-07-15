@@ -22,9 +22,10 @@ const createUser = catchAsync(async (req: Request, res: Response, next: NextFunc
         data: user
     })
 })
+
 const updateUser = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     const userId = req.params.id
-    const token = req.headers.authorization
+    // const token = req.headers.authorization
     // const verifiedToken = verifyToken(token as string, envVars.JWT_ACCESS_SECRET) as JwtPayload
     // we will get the verified token directly from checkauth now 
     const verifiedToken = req.user

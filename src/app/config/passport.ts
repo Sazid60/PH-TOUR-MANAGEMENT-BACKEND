@@ -9,13 +9,16 @@ import passport from "passport";
 passport.use(
     new GoogleStrategy(
         {
+            // options
             clientID: envVars.GOOGLE_CLIENT_ID,
             clientSecret: envVars.GOOGLE_CLIENT_SECRET,
             callbackURL: envVars.GOOGLE_CALLBACK_URL
         }, async (accessToken: string, refreshToken: string, profile: Profile, done: VerifyCallback) => {
+            // verify
             try {
 
                 const email = profile.emails?.[0].value
+
                 if (!email) {
                     return done(null, false, { message: "No Email Found !" }) //its like throw new app error and passport has its own 
                 }
@@ -23,19 +26,21 @@ passport.use(
                 let user = await User.findOne({ email })
 
                 if (!user) {
-                    user = await User.create({
-                        email,
-                        name: profile.displayName,
-                        picture: profile.photos?.[0].value,
-                        role: Role.USER,
-                        isVerified: true,
-                        auths: [
-                            {
-                                provider: "google",
-                                providerId: profile.id
-                            }
-                        ]
-                    })
+                    user = await User.create(
+                        {
+                            email,
+                            name: profile.displayName,
+                            picture: profile.photos?.[0].value,
+                            role: Role.USER,
+                            isVerified: true,
+                            auths: [
+                                {
+                                    provider: "google",
+                                    providerId: profile.id
+                                }
+                            ]
+                        }
+                    )
                 }
 
                 return done(null, user) // will set the user to req.user
