@@ -5,6 +5,47 @@ import { envVars } from "./env";
 import { User } from "../modules/user/user.model";
 import { Role } from "../modules/user/user.interface";
 import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import bcrypt from 'bcryptjs';
+
+
+passport.use(
+    new LocalStrategy(
+        {
+            usernameField: "email",
+            passwordField: "password"
+            // these will be passed to the verify function 
+        },
+        async (email: string, password: string, done: VerifyCallback) => {
+            // there will be the business logics that will hold the functionalities that we have done in credentialsLogin
+            try {
+                const isUserExist = await User.findOne({ email })
+
+                // we are just handling login here and register will be done separately. 
+                // It will not create user automatically if user do not exists like google login because we have no data of user at this point except email and password. 
+                if (!isUserExist) {
+                    return done(null, false, { message: "User Not Found" })
+                }
+
+                const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+                if (!isPasswordMatch) {
+                    return done(null, false, { message: "Password Does Not Match" })
+                }
+
+                return done(null, isUserExist)
+
+                // here is a catch that google login user do not have password. we do not have password for login in here.
+                // we have to manage this issue by adding password field 
+                // we will send a message that if you logged in using google please set the password or just login using google again 
+
+            } catch (error) {
+                console.log(error)
+                return done(error) // this is acting like next(error)
+            }
+        }
+    )
+)
 
 passport.use(
     new GoogleStrategy(
@@ -19,6 +60,7 @@ passport.use(
 
                 const email = profile.emails?.[0].value
 
+                // we are checking if the user is exist in cloud 
                 if (!email) {
                     return done(null, false, { message: "No Email Found !" }) //its like throw new app error and passport has its own 
                 }
