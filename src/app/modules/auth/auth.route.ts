@@ -24,4 +24,7 @@ router.get("/google", async (req: Request, res: Response, next: NextFunction) =>
 router.get("/google/callback", passport.authenticate("google", { failureRedirect: "/login" }), AuthControllers.googleCallbackController)
 
 // this is for setting the cookies 
+
+
+
 export const authRoutes = router
