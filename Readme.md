@@ -1228,3 +1228,123 @@ export const globalErrorHandler = (err: any, req: Request, res: Response, next: 
 
 }
 ```
+
+## 29-9 Create interface and model for Division and interface for Tour
+
+- division.interface.ts 
+
+```ts 
+export interface IDivision {
+    name: string;
+    slug: string;
+    thumbnail?: string;
+    description?: string
+}
+
+/**
+ * division name = Chattogram Division
+ * 
+ * slug = chattogram-division
+ * 
+ * /:id => /efwl432qgyqahwe
+ * 
+ * /:id => 
+ * 
+ * /:slug => /division/chattogram-division
+ * 
+ */
+```
+
+- division.model.ts 
+
+```ts 
+import { model, Schema } from "mongoose";
+import { IDivision } from "./division.interface";
+
+
+const divisionSchema = new Schema<IDivision>({
+    name: { type: String, required: true, unique: true },
+    slug: { type: String, unique: true },
+    thumbnail: { type: String },
+    description: { type: String }
+}, {
+    timestamps: true
+})
+
+export const Division = model<IDivision>("Division", divisionSchema)
+```
+
+- tour.interface.ts 
+
+```ts 
+import { Types } from "mongoose";
+
+export interface ITourType {
+    name: string;
+}
+export interface ITour {
+    title: string;
+    slug: string;
+    description?: string;
+    images?: string[];
+    location?: string;
+    costFrom?: number;
+    startDate?: Date
+    endDate?: Date;
+    included?: string[];
+    excluded?: string[]
+    amenities?: string[];
+    tourPlan?: string[];
+    maxGuest?: number;
+    minAge?: number;
+    division: Types.ObjectId
+    tourType: Types.ObjectId
+}
+```
+## 29-10 Create model for Tour and Tour Types
+
+- tour.model.ts 
+
+```ts 
+import { model, Schema } from "mongoose";
+import { ITour, ITourType } from "./tour.interface";
+
+const tourTypeSchema = new Schema<ITourType>({
+    name: { type: String, required: true, unique: true }
+}, {
+    timestamps: true
+})
+
+export const TourType = model<ITourType>("TourType", tourTypeSchema)
+
+const tourSchema = new Schema<ITour>({
+    title: { type: String, required: true },
+    slug: { type: String, required: true, unique: true },
+    description: { type: String },
+    images: { type: [String], default: [] },
+    location: { type: String },
+    costFrom: { type: Number },
+    startDate: { type: Date },
+    endDate: { type: Date },
+    included: { type: [String], default: [] },
+    excluded: { type: [String], default: [] },
+    amenities: { type: [String], default: [] },
+    tourPlan: { type: [String], default: [] },
+    maxGuest: { type: Number },
+    minAge: { type: Number },
+    division: {
+        type: Schema.Types.ObjectId,
+        ref: "Division",
+        required: true
+    },
+    tourType: {
+        type: Schema.Types.ObjectId,
+        ref: "TourType",
+        required: true
+    }
+}, {
+    timestamps: true
+})
+
+export const Tour = model<ITour>("Tour", tourSchema)
+```
