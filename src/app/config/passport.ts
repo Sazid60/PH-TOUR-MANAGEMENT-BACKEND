@@ -16,7 +16,8 @@ passport.use(
             passwordField: "password"
             // these will be passed to the verify function 
         },
-        async (email: string, password: string, done: VerifyCallback) => {
+        //  we do not need to give the done type for local as it automatically infers 
+        async (email: string, password: string, done) => {
             // there will be the business logics that will hold the functionalities that we have done in credentialsLogin
             try {
                 const isUserExist = await User.findOne({ email })
@@ -25,6 +26,14 @@ passport.use(
                 // It will not create user automatically if user do not exists like google login because we have no data of user at this point except email and password. 
                 if (!isUserExist) {
                     return done(null, false, { message: "User Not Found" })
+                }
+
+                // Returns true if any item in array matches the condition
+                // .some() is specifically designed for checking if at least one item in an array matches a condition — and it can short-circuit
+                const isGoogleAuthenticated = isUserExist.auths.some(providerObjects => providerObjects.provider == "google")
+
+                if (isGoogleAuthenticated && !isUserExist.password) {
+                    return done(null, false, { message: "You have authenticated through Google. So if you want to login with credentials, then at first login with google and set a password for your Gmail and then you can login with email and password." })
                 }
 
                 const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
