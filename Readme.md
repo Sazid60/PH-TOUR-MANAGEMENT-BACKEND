@@ -521,3 +521,325 @@ export const authRoutes = router
 
 - we can use done in different ways 
 - like we knew `done(err, user, info)` we can just use `done("user Not Found")` as well. this will set the error message to the error. 
+
+## 29-4 Testing Credential Authentication with Passport
+- For returning error we must use this previous did not worked 
+- auth.controller.ts 
+```ts 
+        if (err) {
+            // return next(err)
+
+            // or 
+            new AppError(401, err) 
+        }
+```
+- final version of auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+import { setAuthCookie } from "../../utils/setCookie";
+import bcrypt from 'bcryptjs';
+import { JwtPayload } from "jsonwebtoken";
+import { createUserToken } from "../../utils/userToken";
+import { envVars } from "../../config/env";
+import passport from "passport";
+
+
+const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    // const loginInfo = await AuthServices.credentialsLogin(req.body)
+
+    // res.cookie("accessToken", loginInfo.accessToken,
+    //     {
+    //         httpOnly: true,
+    //         secure: false
+    //     }
+    // )
+    // res.cookie("refreshToken", loginInfo.refreshToken,
+    //     {
+    //         httpOnly: true, // this is for setting the cookies in frontend 
+    //         secure: false //because for security issue frontend normally do not allow to set cookies because backend and frontend have two different live server 
+    //     }
+    // )
+
+    // both access token and refresh token works will be done by this function 
+    // setAuthCookie(res, loginInfo)
+
+    // // (method) Response<any, Record<string, any>, number>.cookie(name: string, val: string, options: CookieOptions): Response<any, Record<string, any>> (+2 overloads)
+
+    // sendResponse(res, {
+    //     success: true,
+    //     statusCode: httpStatus.OK,
+    //     message: "User Logged In Successfully",
+    //     data: loginInfo
+    // })
+
+    // all works including the response sending will be done by passport controller 
+
+
+    // (method) Authenticator<Handler, any, any, AuthenticateOptions>.authenticate(strategy: string | string[] | passport.Strategy, callback?: passport.AuthenticateCallback | ((...args: any[]) => any) | undefined): any (+2 overloads)
+
+    passport.authenticate("local", async (err: any, user: any, info: any) => {
+        // where we are getting  (err: any, user: any, info: any) in the function? 
+        // remember ? we have used to send response done(err, user, info)? this the reason why we are getting here. 
+        if (err) {
+            // return new AppError(401, err) we can not use this as well
+            // here we can not directly call the throw new AppError(403,err) because we are inside passport js service 
+            // things we can do here for throwing error 
+            /*
+            * return next(err) 
+
+            here we were not suppose to get return next(). still we are getting because we have manually triggered the function at the end (req, res, next). but we can not just write next(err)
+
+            * we can not use not use done() here — because you're already in the final callback of passport.authenticate, where done() has already been called internally by Passport.
+
+            */
+
+            // return next(err)
+            // or
+
+            return next(new AppError(401, err))
+        }
+
+        if (!user) {
+            // console.log("from !user");
+            // return new AppError(401, info.message)
+            return next(new AppError(401, info.message))
+        }
+
+        const userTokens = await createUserToken(user)
+
+        // delete user.toObject().password
+
+        const { password: pass, ...rest } = user.toObject()
+
+
+        setAuthCookie(res, userTokens)
+
+        sendResponse(res, {
+            success: true,
+            statusCode: httpStatus.OK,
+            message: "User Logged In Successfully",
+            data: {
+                accessToken: userTokens.accessToken,
+                refreshToken: userTokens.refreshToken,
+                user: rest
+            }
+        })
+    })(req, res, next) // express just call the upper function and it do call function inside the function. so if we use passport.authenticate() in other function we need to manually trigger. 
+})
+const getNewAccessToken = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const refreshToken = req.cookies.refreshToken
+    // const refreshToken = req.headers.authorization as string // only used for test purpose 
+    if (!refreshToken) {
+        throw new AppError(httpStatus.BAD_REQUEST, "No Access Token Received")
+    }
+    const tokenInfo = await AuthServices.getNewAccessToken(refreshToken)
+    // this will set the newly generated access token (generated using refresh token) to the cookies
+
+    setAuthCookie(res, tokenInfo)
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "New Access Token Generated Successfully",
+        data: tokenInfo
+    })
+})
+const logout = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    res.clearCookie("accessToken",
+        {
+            httpOnly: true,
+            secure: false,
+            sameSite: "lax"
+        }
+    )
+    res.clearCookie("refreshToken",
+        {
+            httpOnly: true,
+            secure: false,
+            sameSite: "lax"
+        }
+    )
+
+    // (method) Response<any, Record<string, any>, number>.clearCookie(name: string, options?: CookieOptions): Response<any, Record<string, any>>
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged Out Successfully",
+        data: null
+    })
+
+})
+const resetPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const newPassword = req.body.newPassword
+    const oldPassword = req.body.oldPassword
+    const decodedToken = req.user
+
+    await AuthServices.resetPassword(oldPassword, newPassword, decodedToken as JwtPayload)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "password Changed Successfully",
+        data: null
+    })
+
+})
+const googleCallbackController = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    // wer are getting this because of  return done(null, user) // set by the passport.js 
+    const user = req.user;
+
+    let redirectTo = req.query.state ? req.query.state as string : ""
+
+    if (redirectTo.startsWith("/")) {
+        redirectTo = redirectTo.slice(1) // /booking => booking , => "/" => ""
+    }
+
+    if (!user) {
+        throw new AppError(httpStatus.NOT_FOUND, "User Not Found")
+    }
+
+    const tokenInfo = createUserToken(user)
+
+    setAuthCookie(res, tokenInfo)
+
+    // sendResponse(res, {
+    //     success: true,
+    //     statusCode: httpStatus.OK,
+    //     message: "password Changed Successfully",
+    //     data: null
+    // })
+
+    // after successful login it will redirect the home page to this link
+    res.redirect(`${envVars.FRONTEND_URL}/${redirectTo}`)
+
+})
+
+
+export const AuthControllers = {
+    credentialsLogin,
+    getNewAccessToken,
+    logout,
+    resetPassword,
+    googleCallbackController,
+}
+```
+
+- now we do not need auth.service.ts for login
+
+```ts 
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import AppError from '../../errorHelpers/AppError';
+import { IsActive, IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken, verifyToken } from "../../utils/jwt";
+import { envVars } from '../../config/env';
+import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
+import { JwtPayload } from "jsonwebtoken";
+
+
+// const credentialsLogin = async (payload: Partial<IUser>) => {
+//     const { email, password } = payload
+
+//     const isUserExist = await User.findOne({ email })
+//     if (!isUserExist) {
+//         throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
+//     }
+
+//     const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+//     if (!isPasswordMatch) {
+//         throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
+//     }
+
+//     // generating access token 
+
+//     // const jwtPayload = {
+//     //     userId: isUserExist._id,
+//     //     email: isUserExist.email,
+//     //     role: isUserExist.role
+//     // }
+//     // // const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
+//     // const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+//     // // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
+
+//     // const refreshToken = generateToken(jwtPayload, envVars.JWT_REFRESH_SECRET, envVars.JWT_REFRESH_EXPIRES)
+
+//     // we are not sending the password in response so deleted. 
+
+//     const userTokens = createUserToken(isUserExist)
+
+//     const { password: pass, ...rest } = isUserExist.toObject()
+//     return {
+//         accessToken: userTokens.accessToken,
+//         refreshToken: userTokens.refreshToken,
+//         user: rest
+//     }
+// }
+
+
+const getNewAccessToken = async (refreshToken: string) => {
+    // const verifiedRefreshToken = verifyToken(refreshToken, envVars.JWT_REFRESH_SECRET) as JwtPayload
+    // // we do not have to check the verified status and throw error because if not verified it automatically send error . so no need to write if else 
+
+    // const isUserExist = await User.findOne({ email: verifiedRefreshToken.email })
+    // if (!isUserExist) {
+    //     throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+    // }
+
+    // if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+    //     throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+    // }
+    // if (isUserExist.isDeleted) {
+    //     throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+    // }
+    // // generating access token 
+    // const jwtPayload = {
+    //     userId: isUserExist._id,
+    //     email: isUserExist.email,
+    //     role: isUserExist.role
+    // }
+    // const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+    // generating access token generating works will be done by this function 
+    const newAccessToken = await createNewAccessTokenWithRefreshToken(refreshToken)
+    return {
+        accessToken: newAccessToken
+    }
+}
+
+
+const resetPassword = async (oldPassword: string, newPassword: string, decodedToken: JwtPayload) => {
+
+    const user = await User.findById(decodedToken.userId)
+
+    const isOldPasswordMatch = await bcrypt.compare(oldPassword, user!.password as string)
+    if (!isOldPasswordMatch) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "Old Password does not match");
+    }
+
+    user!.password = await bcrypt.hash(newPassword, Number(envVars.BCRYPT_SALT_ROUND))
+
+    user!.save();
+
+}
+export const AuthServices = {
+    // credentialsLogin,
+    getNewAccessToken,
+    resetPassword
+}
+``

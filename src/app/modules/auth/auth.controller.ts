@@ -52,7 +52,7 @@ const credentialsLogin = catchAsync(async (req: Request, res: Response, next: Ne
         // where we are getting  (err: any, user: any, info: any) in the function? 
         // remember ? we have used to send response done(err, user, info)? this the reason why we are getting here. 
         if (err) {
-            return new AppError(401, err)
+            // return new AppError(401, err) we can not use this as well
             // here we can not directly call the throw new AppError(403,err) because we are inside passport js service 
             // things we can do here for throwing error 
             /*
@@ -63,6 +63,11 @@ const credentialsLogin = catchAsync(async (req: Request, res: Response, next: Ne
             * we can not use not use done() here — because you're already in the final callback of passport.authenticate, where done() has already been called internally by Passport.
 
             */
+
+            // return next(err)
+            // or
+
+            return next(new AppError(401, err))
         }
 
         if (!user) {

@@ -27,6 +27,12 @@ app.use(cookieParser()) // cookie parser added
 app.use(express.json())
 app.use(cors())
 
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
 app.use("/api/v1", router)
 
 // using the global error handler 
@@ -35,10 +41,6 @@ app.use(globalErrorHandler)
 // Using not found route 
 app.use(notFound)
 
-app.get("/", (req: Request, res: Response) => {
-    res.status(200).json({
-        message: "Welcome To Tour Management System"
-    })
-})
+
 
 export default app
