@@ -842,4 +842,91 @@ export const AuthServices = {
     getNewAccessToken,
     resetPassword
 }
-``
+```
+
+## 29-5 Handling Mongoose Cast Error and Duplicate Error
+
+#### lets handle the duplicate error of mongoose first 
+- we will get a code inside the error if any duplicate error happens it will give us a error code 11000 inside error using this we will handle the duplicate error 
+- globalErrorHandler.ts 
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express";
+import { envVars } from "../config/env";
+import AppError from "../errorHelpers/AppError";
+
+export const globalErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+
+    let statusCode = 500
+    let message = "Something went wrong !!"
+
+
+    if (err.code === 11000) {
+        // console.log(err)
+        statusCode = 400;
+        const matchedArray = err.message.match(/"([^"]*)"/)
+        message = `${matchedArray[1]} already Exist`
+    }
+    else if (err instanceof AppError) {
+        statusCode = err.statusCode;
+        message = err.message
+    } else if (err instanceof Error) {
+        statusCode = 500;
+        message = err?.message
+    }
+
+    res.status(statusCode).json({
+        success: false,
+        message,
+        err,
+        stack: envVars.NODE_ENV === "development" ? err.stack : null
+    })
+
+}
+```
+#### lets handle the castError error of mongoose
+- if any not valid mongodb id is given for query it will show cast error. we will get `name = "castError"` in error. using this we wiill handle the cast error.   
+- globalErrorHandler.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express";
+import { envVars } from "../config/env";
+import AppError from "../errorHelpers/AppError";
+
+export const globalErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+
+    let statusCode = 500
+    let message = "Something went wrong !!"
+
+
+    if (err.code === 11000) {
+        // console.log(err)
+        statusCode = 400;
+        const matchedArray = err.message.match(/"([^"]*)"/)
+        message = `${matchedArray[1]} already Exist`
+    } else if (err.name === "CastError") {
+        statusCode = 400;
+        message = "Invalid Mongodb Object Id ! Please Provide Valid Id ! "
+    }
+    else if (err instanceof AppError) {
+        statusCode = err.statusCode;
+        message = err.message
+    } else if (err instanceof Error) {
+        statusCode = 500;
+        message = err?.message
+    }
+
+    res.status(statusCode).json({
+        success: false,
+        message,
+        err,
+        stack: envVars.NODE_ENV === "development" ? err.stack : null
+    })
+
+}
+```
+
+#### #### lets handle the mongoose validation error 
