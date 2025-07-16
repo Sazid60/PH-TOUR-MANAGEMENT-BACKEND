@@ -20,6 +20,7 @@ export const globalErrorHandler = (err: any, req: Request, res: Response, next: 
         statusCode = 400;
         message = "Invalid Mongodb Object Id ! Please Provide Valid Id ! "
     } else if (err.name === "ValidationError") {
+        // mongoose validation error
         statusCode = 400;
         const errors = Object.values(err.errors)
         // console.log(errors)
@@ -29,6 +30,20 @@ export const globalErrorHandler = (err: any, req: Request, res: Response, next: 
             message: errorObject.message
         }))
         message = "Validation Error"
+    } else if (err.name === "ZodError") {
+        // zod Error 
+        statusCode = 400;
+        message = "Zod Validation Error"
+
+        err.issues.forEach((issue: any) => {
+            errorSources.push({
+                //path : "nickname iside lastname inside name"
+                // path: issue.path.length > 1 && issue.path.reverse().join(" inside "),
+
+                path: issue.path[issue.path.length - 1],
+                message: issue.message
+            })
+        })
     }
     else if (err instanceof AppError) {
         statusCode = err.statusCode;

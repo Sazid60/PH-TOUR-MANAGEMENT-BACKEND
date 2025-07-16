@@ -985,3 +985,73 @@ export const globalErrorHandler = (err: any, req: Request, res: Response, next: 
 ```
 
 ## 29-7 Handling Zod Error
+- globalErrorHandler.ts 
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express";
+import { envVars } from "../config/env";
+import AppError from "../errorHelpers/AppError";
+
+export const globalErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+
+    let statusCode = 500
+    let message = "Something went wrong !!"
+    const errorSources: any = []
+
+
+    if (err.code === 11000) {
+        // console.log(err)
+        statusCode = 400;
+        const matchedArray = err.message.match(/"([^"]*)"/)
+        message = `${matchedArray[1]} already Exist`
+    } else if (err.name === "CastError") {
+        statusCode = 400;
+        message = "Invalid Mongodb Object Id ! Please Provide Valid Id ! "
+    } else if (err.name === "ValidationError") {
+        // mongoose validation error
+        statusCode = 400;
+        const errors = Object.values(err.errors)
+        // console.log(errors)
+
+        errors.forEach((errorObject: any) => errorSources.push({
+            path: errorObject.path,
+            message: errorObject.message
+        }))
+        message = "Validation Error"
+    } else if (err.name === "ZodError") {
+        // zod Error 
+        statusCode = 400;
+        message = "Zod Validation Error"
+
+        err.issues.forEach((issue: any) => {
+            errorSources.push({
+                //path : "nickname iside lastname inside name"
+                // path: issue.path.length > 1 && issue.path.reverse().join(" inside "),
+
+                path: issue.path[issue.path.length - 1],
+                message: issue.message
+            })
+        })
+    }
+    else if (err instanceof AppError) {
+        statusCode = err.statusCode;
+        message = err.message
+    } else if (err instanceof Error) {
+        statusCode = 500;
+        message = err?.message
+    }
+
+    res.status(statusCode).json({
+        success: false,
+        message,
+        errorSources,
+        err,
+        stack: envVars.NODE_ENV === "development" ? err.stack : null
+    })
+
+}
+```
+
+
+## 29-8 Refactoring Error Handlers to separate functions
