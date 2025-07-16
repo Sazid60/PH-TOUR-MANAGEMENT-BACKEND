@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextFunction, Request, Response } from "express"
 
@@ -11,10 +12,11 @@ import bcrypt from 'bcryptjs';
 import { JwtPayload } from "jsonwebtoken";
 import { createUserToken } from "../../utils/userToken";
 import { envVars } from "../../config/env";
+import passport from "passport";
 
 
 const credentialsLogin = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-    const loginInfo = await AuthServices.credentialsLogin(req.body)
+    // const loginInfo = await AuthServices.credentialsLogin(req.body)
 
     // res.cookie("accessToken", loginInfo.accessToken,
     //     {
@@ -30,16 +32,65 @@ const credentialsLogin = catchAsync(async (req: Request, res: Response, next: Ne
     // )
 
     // both access token and refresh token works will be done by this function 
-    setAuthCookie(res, loginInfo)
+    // setAuthCookie(res, loginInfo)
 
-    // (method) Response<any, Record<string, any>, number>.cookie(name: string, val: string, options: CookieOptions): Response<any, Record<string, any>> (+2 overloads)
+    // // (method) Response<any, Record<string, any>, number>.cookie(name: string, val: string, options: CookieOptions): Response<any, Record<string, any>> (+2 overloads)
 
-    sendResponse(res, {
-        success: true,
-        statusCode: httpStatus.OK,
-        message: "User Logged In Successfully",
-        data: loginInfo
-    })
+    // sendResponse(res, {
+    //     success: true,
+    //     statusCode: httpStatus.OK,
+    //     message: "User Logged In Successfully",
+    //     data: loginInfo
+    // })
+
+    // all works including the response sending will be done by passport controller 
+
+
+    // (method) Authenticator<Handler, any, any, AuthenticateOptions>.authenticate(strategy: string | string[] | passport.Strategy, callback?: passport.AuthenticateCallback | ((...args: any[]) => any) | undefined): any (+2 overloads)
+
+    passport.authenticate("local", async (err: any, user: any, info: any) => {
+        // where we are getting  (err: any, user: any, info: any) in the function? 
+        // remember ? we have used to send response done(err, user, info)? this the reason why we are getting here. 
+        if (err) {
+            return new AppError(401, err)
+            // here we can not directly call the throw new AppError(403,err) because we are inside passport js service 
+            // things we can do here for throwing error 
+            /*
+            * return next(err) 
+
+            here we were not suppose to get return next(). still we are getting because we have manually triggered the function at the end (req, res, next). but we can not just write next(err)
+
+            * we can not use not use done() here — because you're already in the final callback of passport.authenticate, where done() has already been called internally by Passport.
+
+            */
+        }
+
+        if (!user) {
+            // console.log("from !user");
+            // return new AppError(401, info.message)
+            return next(new AppError(401, info.message))
+        }
+
+        const userTokens = await createUserToken(user)
+
+        // delete user.toObject().password
+
+        const { password: pass, ...rest } = user.toObject()
+
+
+        setAuthCookie(res, userTokens)
+
+        sendResponse(res, {
+            success: true,
+            statusCode: httpStatus.OK,
+            message: "User Logged In Successfully",
+            data: {
+                accessToken: userTokens.accessToken,
+                refreshToken: userTokens.refreshToken,
+                user: rest
+            }
+        })
+    })(req, res, next) // express just call the upper function and it do call function inside the function. so if we use passport.authenticate() in other function we need to manually trigger. 
 })
 const getNewAccessToken = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     const refreshToken = req.cookies.refreshToken
