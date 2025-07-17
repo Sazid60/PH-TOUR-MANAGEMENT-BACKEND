@@ -20,7 +20,7 @@ const moduleRoutes = [
         route: DivisionRoutes
     },
     {
-        path: "/tour",
+        path: "/tours",
         route: TourRoutes
     },
 ]
