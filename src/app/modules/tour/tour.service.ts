@@ -1,5 +1,6 @@
 
 
+import { tourSearchableFields } from "./tour.constant";
 import { ITour, ITourType } from "./tour.interface";
 import { Tour, TourType } from "./tour.model";
 
@@ -26,7 +27,25 @@ const createTour = async (payload: ITour) => {
 
 const getAllTours = async (query: Record<string, unknown>) => {
     const filter = query
-    const allTours = await Tour.find(filter)
+    const searchTerm = query.searchTerm || ""
+
+    //This line deletes the searchTerm key from the filter object in JavaScript/TypeScript.
+    delete filter["searchTerm"]
+
+    //  this means the fields where the searching will be happened. 
+    // the mechanism will be like if not found in one search field it will search in another search field that we have mentioned here. 
+
+    // lets make the search query dynamic 
+
+    const searchQuery = {
+        $or: tourSearchableFields.map(field => ({ [field]: { $regex: searchTerm, $options: "i" } }))
+    }
+    // this is giving something like 
+    // { title: { $regex: searchTerms, $options: "i" } }
+    // { description: { $regex: searchTerms, $options: "i" } }
+    // { location: { $regex: searchTerms, $options: "i" } }
+
+    const allTours = await Tour.find(searchQuery).find(filter)
     const totalTours = await Tour.countDocuments();
     const meta = {
         total: totalTours,
