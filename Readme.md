@@ -115,3 +115,132 @@ const updateTour = async (id: string, payload: Partial<ITour>) => {
     return updatedTour;
 };
 ```
+
+## 30-2 Create pre hooks for dynamic slug creating for Division and Tour
+
+- division.model.ts
+
+```ts 
+// this pre hook is used for creating a division
+divisionSchema.pre("save", async function (next) {
+    if (this.isModified("name")) {
+        const baseSlug = this.name.toLowerCase().split(" ").join("-")
+        let slug = `${baseSlug}-division`
+
+        let counter = 0;
+        while (await Division.exists({ slug })) {
+            slug = `${slug}-${counter++}`
+        }
+
+        this.slug = slug
+    }
+
+    next()
+
+})
+
+// this is for updating. this a query middleware and we will not get access to `this` because we have no access to the document directly 
+// with the help of getUpdate() we will get the access of updated document
+divisionSchema.pre("findOneAndUpdate", async function (next) {
+    const division = this.getUpdate() as Partial<IDivision>
+    if (division.name) {
+        const baseSlug = division.name.toLowerCase().split(" ").join("-")
+        let slug = `${baseSlug}-division`
+
+        let counter = 0;
+        while (await Division.exists({ slug })) {
+            slug = `${slug}-${counter++}`
+        }
+        division.slug = slug
+    }
+
+    // for saving the slug we have do it manually using `setUpdate()`
+
+    this.setUpdate(division)
+
+    next()
+
+})
+```
+
+- tour.model.ts 
+
+```ts 
+// this pre hook is used for creating a tour
+tourSchema.pre("save", async function (next) {
+    if (this.isModified("name")) {
+        const baseSlug = this.title.toLowerCase().split(" ").join("-")
+        let slug = `${baseSlug}`
+
+        let counter = 0;
+        while (await Tour.exists({ slug })) {
+            slug = `${slug}-${counter++}`
+        }
+
+        this.slug = slug
+    }
+
+    next()
+
+})
+
+// this is for updating. this a query middleware and we will not get access to `this` because we have no access to the document directly 
+// with the help of getUpdate() we will get the access of updated document
+tourSchema.pre("findOneAndUpdate", async function (next) {
+    const tour = this.getUpdate() as Partial<ITour>
+    if (tour.title) {
+        const baseSlug = tour.title.toLowerCase().split(" ").join("-")
+        let slug = `${baseSlug}`
+
+        let counter = 0;
+        while (await Tour.exists({ slug })) {
+            slug = `${slug}-${counter++}`
+        }
+        tour.slug = slug
+    }
+
+    // for saving the slug we have do it manually using `setUpdate()`
+
+    this.setUpdate(tour)
+
+    next()
+
+})
+```
+
+## 30-3 How to do raw filtering
+- filtering the data based on the query 
+- tour.controller.ts 
+
+```ts 
+const getAllTours = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await TourService.getAllTours(query);
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: 'Tours retrieved successfully',
+        data: result.data,
+        meta: result.meta,
+    });
+});
+```
+
+- tour.service.ts 
+
+```ts 
+const getAllTours = async (query: Record<string, unknown>) => {
+    const filter = query
+    const allTours = await Tour.find(filter)
+    const totalTours = await Tour.countDocuments();
+    const meta = {
+        total: totalTours,
+    }
+    return {
+        data: allTours,
+        meta: meta
+    }
+};
+``` 
+
+- lets understand a thing we are sending a query object but we do not know what is the type of the object or what will be the type of the object so, here we have to use record string 
