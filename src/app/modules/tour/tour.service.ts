@@ -24,12 +24,10 @@ const createTour = async (payload: ITour) => {
     return tour;
 };
 
-const getAllTours = async () => {
-
-    const allTours = await Tour.find({})
-
+const getAllTours = async (query: Record<string, unknown>) => {
+    const filter = query
+    const allTours = await Tour.find(filter)
     const totalTours = await Tour.countDocuments();
-
     const meta = {
         total: totalTours,
     }

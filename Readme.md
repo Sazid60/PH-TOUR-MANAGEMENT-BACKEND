@@ -208,3 +208,39 @@ tourSchema.pre("findOneAndUpdate", async function (next) {
 })
 ```
 
+## 30-3 How to do raw filtering
+- filtering the data based on the query 
+- tour.controller.ts 
+
+```ts 
+const getAllTours = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await TourService.getAllTours(query);
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: 'Tours retrieved successfully',
+        data: result.data,
+        meta: result.meta,
+    });
+});
+```
+
+- tour.service.ts 
+
+```ts 
+const getAllTours = async (query: Record<string, unknown>) => {
+    const filter = query
+    const allTours = await Tour.find(filter)
+    const totalTours = await Tour.countDocuments();
+    const meta = {
+        total: totalTours,
+    }
+    return {
+        data: allTours,
+        meta: meta
+    }
+};
+``` 
+
+- lets understand a thing we are sending a query object but we do not know what is the type of the object or what will be the type of the object so, here we have to use record string 
