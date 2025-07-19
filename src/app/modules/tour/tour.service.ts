@@ -157,9 +157,22 @@ const getAllTours = async (query: Record<string, string>) => {
     // all works will be don e by QueryBuilder
     const queryBuilder = new QueryBuilder(Tour.find(), query)
 
-    const tours = await queryBuilder.search(tourSearchableFields).filter().modelQuery
+    const tours = await queryBuilder
+        .search(tourSearchableFields)
+        .filter()
+        .sort()
+        .fields()
+        .paginate()
+    // .build()
 
     // model query is in last because it will resolve the code. before resolve we want to do search sort filter pagination 
+
+    // grabbing meta data from QueryBuilder method 
+    // const meta = await queryBuilder.getMeta()
+    const [data, meta] = await Promise.all([
+        tours.build(),
+        queryBuilder.getMeta()
+    ])
 
     // const totalTours = await Tour.countDocuments();
     // const meta = {
@@ -169,8 +182,8 @@ const getAllTours = async (query: Record<string, string>) => {
     //     limit: limit,
     // }
     return {
-        data: tours,
-        // meta: meta
+        data,
+        meta
     }
 };
 

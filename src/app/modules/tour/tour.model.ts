@@ -18,6 +18,8 @@ const tourSchema = new Schema<ITour>({
     costFrom: { type: Number },
     startDate: { type: Date },
     endDate: { type: Date },
+    departureLocation: { type: String },
+    arrivalLocation: { type: String },
     included: { type: [String], default: [] },
     excluded: { type: [String], default: [] },
     amenities: { type: [String], default: [] },
@@ -35,13 +37,14 @@ const tourSchema = new Schema<ITour>({
         required: true
     }
 }, {
-    timestamps: true
+    timestamps: true,
+    versionKey: false,
 })
 
 
 // this pre hook is used for creating a tour
 tourSchema.pre("save", async function (next) {
-    if (this.isModified("name")) {
+    if (this.isModified("title")) {
         const baseSlug = this.title.toLowerCase().split(" ").join("-")
         let slug = `${baseSlug}`
 
