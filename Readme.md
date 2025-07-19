@@ -55,3 +55,95 @@ export interface IPayment {
 }
 ```
 - here we can directly see the payment information inside the booking information we do not need to query for getting the payment information by searching using id. 
+
+## 31-2 Create model for Booking and Payment
+
+- booking.model.ts
+
+```ts 
+import { model, Schema } from "mongoose";
+import { BOOKING_STATUS, IBooking } from "./booking.interface";
+
+
+const bookingSchema = new Schema<IBooking>(
+    {
+        user: {
+            type: Schema.Types.ObjectId,
+            ref: "User",
+            required: true
+        },
+        tour: {
+            type: Schema.Types.ObjectId,
+            ref: "Tour",
+            required: true
+        },
+        payment: {
+            type: Schema.Types.ObjectId,
+            ref: "Payment",
+            required: true
+        },
+        status: {
+            type: String,
+            enum: Object.values(BOOKING_STATUS),
+            default: BOOKING_STATUS.PENDING
+        },
+        guestCount: {
+            type: Number,
+            required: true
+        }
+    },
+    {
+        timestamps: false
+    }
+)
+
+export const Booking = model<IBooking>("Booking", bookingSchema)
+```
+
+- payment.model.ts 
+
+```ts 
+import { model, Schema } from "mongoose";
+import { IPayment, PAYMENT_STATUS } from "./payment.interface";
+
+
+
+const paymentSchema = new Schema<IPayment>(
+    {
+        booking: {
+            type: Schema.Types.ObjectId,
+            ref: "Booking",
+            required: true,
+            unique: true
+        },
+        transactionId: {
+            type: String,
+            required: true,
+            unique: true
+        },
+        status: {
+            type: String,
+            enum: Object.values(PAYMENT_STATUS),
+            default: PAYMENT_STATUS.UNPAID
+        },
+        amount: {
+            type: Number,
+            required: true
+        },
+
+        paymentGatewayData: {
+            // this will be mixed as we have use any as type in interface 
+            type: Schema.Types.Mixed,
+
+        },
+        invoiceUrl: {
+            type : String
+        }
+    },
+{
+    timestamps: false
+}
+)
+
+export const Booking = model<IPayment>("Payment", paymentSchema)
+```
