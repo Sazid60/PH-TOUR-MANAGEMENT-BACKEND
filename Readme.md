@@ -925,3 +925,145 @@ const getAllTours = async (query: Record<string, string>) => {
 ```
 
 - lets move the queryBuilder in utils 
+
+## 30-9 Complete the Query Builder
+- Bro ! What if we do not want to call the modelQuery everywhere? 
+- tour.service.ts
+```ts 
+    const tours = await queryBuilder
+        .search(tourSearchableFields)
+        .filter()
+        .sort()
+        .fields()
+        .paginate()
+        .modelQuery
+```
+- lets make a method for calling this for calling like others. 
+- QueryBuilder.ts 
+
+```ts 
+    build() {
+        return this.modelQuery
+    }
+```
+- now we can call directly like others 
+- tour.service.ts 
+
+```ts 
+    const tours = await queryBuilder
+        .search(tourSearchableFields)
+        .filter()
+        .sort()
+        .fields()
+        .paginate()
+        .build()
+```
+
+#### Now handle the meta data from query Builder 
+
+- QueryBuilder.ts 
+
+```ts 
+
+    // here async was given first because in method this is the procedure
+    async getMeta() {
+        const totalDocuments = await this.modelQuery.countDocuments()
+
+        const page = Number(this.query.page) || 1
+        const limit = Number(this.query.limit) || 10
+
+        const totalPage = Math.ceil(totalDocuments / limit)
+
+        return { page, limit, total: totalDocuments, totalPage }
+    }
+
+```
+- tour.service.ts 
+
+```ts 
+const getAllTours = async (query: Record<string, string>) => {
+
+    // all works will be don e by QueryBuilder
+    const queryBuilder = new QueryBuilder(Tour.find(), query)
+
+    const tours = await queryBuilder
+        .search(tourSearchableFields)
+        .filter()
+        .sort()
+        .fields()
+        .paginate()
+        .build()
+
+    // model query is in last because it will resolve the code. before resolve we want to do search sort filter pagination 
+
+    // grabbing meta data from QueryBuilder method 
+    const meta = await queryBuilder.getMeta()
+
+    return {
+        data: tours,
+        meta: meta
+    }
+};
+```
+
+### We have an issue with the tour.service.ts and QueryBuilder.ts
+- here parallel data fetching is happening. 
+- Here comes the problem, we can not call the queryBuilder again for meta if its once called for tour data fetching 
+
+```ts 
+    const tours = await queryBuilder
+        .search(tourSearchableFields)
+        .filter()
+        .sort()
+        .fields()
+        .paginate()
+        .build()
+    // grabbing meta data from QueryBuilder method 
+    const meta = await queryBuilder.getMeta()
+```
+- we have to implement parallel data fetching here so that both promise gets resolved at a time if once called
+- update in QueryBuilder.ts 
+
+```ts 
+    async getMeta() {
+        // const totalDocuments = await this.modelQuery.countDocuments()
+        // for parallel data fetching purpose we can not call the queryBuilder again, 
+        // rather we will call the existing model inside the queryBuilder and do the counting 
+
+        const totalDocuments = await this.modelQuery.model.countDocuments()
+
+        const page = Number(this.query.page) || 1
+        const limit = Number(this.query.limit) || 10
+
+        const totalPage = Math.ceil(totalDocuments / limit)
+
+        return { page, limit, total: totalDocuments, totalPage }
+    }
+```
+
+- update in tour.service.ts
+
+```ts 
+const getAllTours = async (query: Record<string, string>) => {
+    const queryBuilder = new QueryBuilder(Tour.find(), query)
+
+    const tours = await queryBuilder
+        .search(tourSearchableFields)
+        .filter()
+        .sort()
+        .fields()
+        .paginate()
+    // .build() //update for parallel fetching
+
+    // const meta = await queryBuilder.getMeta()
+    const [data, meta] = await Promise.all([
+        tours.build(),
+        queryBuilder.getMeta()
+    ]) //update for parallel fetching
+
+    return {
+        data,
+        meta
+    }
+};
+```
