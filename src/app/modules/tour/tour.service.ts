@@ -60,7 +60,7 @@ const getAllTours = async (query: Record<string, unknown>) => {
 
     // lets make the search query dynamic 
 
-    const searchQuery = {
+    const searchObject = {
         $or: tourSearchableFields.map(field => ({ [field]: { $regex: searchTerm, $options: "i" } }))
     }
     // this is giving something like 
@@ -68,10 +68,22 @@ const getAllTours = async (query: Record<string, unknown>) => {
     // { description: { $regex: searchTerms, $options: "i" } }
     // { location: { $regex: searchTerms, $options: "i" } }
 
-    const allTours = await Tour.find(searchQuery).find(filter).sort(sort as string).select(fields).skip(skip).limit(limit);
+    // const allTours = await Tour.find(searchObject).find(filter).sort(sort as string).select(fields).skip(skip).limit(limit);
+
+    // breaking this query in smaller queries 
+
+    const filterQuery = Tour.find(filter)
+    const tours = filterQuery.find(searchObject)
+    const allTours = await tours.sort(sort as string).select(fields).skip(skip).limit(limit);
+
+
+
     const totalTours = await Tour.countDocuments();
     const meta = {
         total: totalTours,
+        totalPage: Math.ceil(totalTours / limit),
+        page: page,
+        limit: limit,
     }
     return {
         data: allTours,

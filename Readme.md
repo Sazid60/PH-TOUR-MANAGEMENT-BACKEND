@@ -727,3 +727,90 @@ const getAllTours = async (query: Record<string, unknown>) => {
 };
 
 ```
+
+## 30-7 How to get meta data for a query, page, limit, total, totalPage
+
+- optimizing the meat data 
+- tour.service.ts
+```ts
+    const meta = {
+        total: totalTours,
+        totalPage: Math.ceil(totalTours / limit),
+        page: page,
+        limit: limit,
+    }
+```
+- now lets break this line 
+
+```ts 
+const allTours = await Tour.find(searchObject).find(filter).sort(sort as string).select(fields).skip(skip).limit(limit);
+```
+- break of query 
+
+```ts
+const getAllTours = async (query: Record<string, unknown>) => {
+    const filter = query
+    const searchTerm = query.searchTerm || ""
+
+    const sort = query.sort || "-createdAt"
+
+    const page = Number(query.page) || 1
+    const limit = Number(query.limit) || 10
+
+    const skip = (page - 1) * limit
+
+    const fields = (query.fields as string)?.split(",").join(" ") || "";
+
+
+    // console.log(sort)
+
+    //This line deletes the searchTerm key from the filter object in JavaScript/TypeScript.
+    // delete filter["searchTerm"]
+    // delete filter["sort"]
+
+    // const tourSearchableFields = ["title", "description", "location"]
+
+    // const excludedFields = ["searchTerm", "sort"]
+
+    for (const field of excludedFields) {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete filter[field]
+    }
+
+    //  this means the fields where the searching will be happened. 
+    // the mechanism will be like if not found in one search field it will search in another search field that we have mentioned here. 
+
+    // lets make the search query dynamic 
+
+    const searchObject = {
+        $or: tourSearchableFields.map(field => ({ [field]: { $regex: searchTerm, $options: "i" } }))
+    }
+    // this is giving something like 
+    // { title: { $regex: searchTerms, $options: "i" } }
+    // { description: { $regex: searchTerms, $options: "i" } }
+    // { location: { $regex: searchTerms, $options: "i" } }
+
+    // const allTours = await Tour.find(searchObject).find(filter).sort(sort as string).select(fields).skip(skip).limit(limit);
+
+    // breaking this query in smaller queries 
+
+    const filterQuery = Tour.find(filter)
+    const tours = filterQuery.find(searchObject)
+    const allTours = await tours.sort(sort as string).select(fields).skip(skip).limit(limit);
+    // we will wait when the data is required. 
+
+
+
+    const totalTours = await Tour.countDocuments();
+    const meta = {
+        total: totalTours,
+        totalPage: Math.ceil(totalTours / limit),
+        page: page,
+        limit: limit,
+    }
+    return {
+        data: allTours,
+        meta: meta
+    }
+};
+```
