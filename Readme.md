@@ -1067,3 +1067,11 @@ const getAllTours = async (query: Record<string, string>) => {
     }
 };
 ```
+
+## 30-10 Get Single Division with slug
+- dynamic routes should be kept bellow always otherwise it will be a problem express will understand
+- If you define a dynamic route (like /tours/:id) before a static route (like /tours/search), then Express will treat /tours/search as if "search" were an :id, and will never reach the actual static route handler.
+- from now on for getting single division we will hit slug for getting the data as id is sensitive 
+
+
+## 30-11 Refactor Tour Model and insert updated fields into Database
