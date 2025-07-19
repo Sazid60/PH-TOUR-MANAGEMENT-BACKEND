@@ -32,7 +32,12 @@ const getAllTours = async (query: Record<string, unknown>) => {
 
     const sort = query.sort || "-createdAt"
 
-    const fields = (query.fields as string).split(",").join(" ") || "";
+    const page = Number(query.page) || 1
+    const limit = Number(query.limit) || 10
+
+    const skip = (page - 1) * limit
+
+    const fields = (query.fields as string)?.split(",").join(" ") || "";
 
 
     // console.log(sort)
@@ -63,7 +68,7 @@ const getAllTours = async (query: Record<string, unknown>) => {
     // { description: { $regex: searchTerms, $options: "i" } }
     // { location: { $regex: searchTerms, $options: "i" } }
 
-    const allTours = await Tour.find(searchQuery).find(filter).sort(sort as string).select(fields)
+    const allTours = await Tour.find(searchQuery).find(filter).sort(sort as string).select(fields).skip(skip).limit(limit);
     const totalTours = await Tour.countDocuments();
     const meta = {
         total: totalTours,
