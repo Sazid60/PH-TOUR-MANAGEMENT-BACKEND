@@ -823,46 +823,6 @@ At Step 5, SSLCOMMERZ will redirect the customer to merchant’s side. At this s
 
 ## 31-6 Setting Up interface for SSL Commerz with env
 
-PORT=
-DB_URL=
-NODE_ENV=
-BCRYPT_SALT_ROUND=
-JWT_ACCESS_SECRET=
-JWT_ACCESS_EXPIRES=
-JWT_REFRESH_SECRET=
-JWT_REFRESH_EXPIRES=
-SUPER_ADMIN_EMAIL=
-SUPER_ADMIN_PASSWORD=
-# google 
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_CALLBACK_URL=
-# This is the URL where Google will send the user back after a successful login using Google OAuth.
-
-
-# express session 
-EXPRESS_SESSION_SECRET=
-
-# frontend url 
-FRONTEND_URL=
-
-
-## SSLCOMMERG
-
-SSL_STORE_ID=
-SSL_STORE_PASS=
-SSL_PAYMENT_API=
-SSL_VALIDATION_API=
-
-# SSL Commerz BACKEND URLs
-SSL_SUCCESS_BACKEND_URL=
-SSL_FAIL_BACKEND_URL=
-SSL_CANCEL_BACKEND_URL=
-
-# SSL Commerz FRONTEND URLs
-SSL_SUCCESS_FRONTEND_URL=
-SSL_FAIL_FRONTEND_URL=
-SSL_CANCEL_FRONTEND_URL=
 ```
 - config -> env.ts 
 
