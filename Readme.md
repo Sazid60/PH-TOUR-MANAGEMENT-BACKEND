@@ -577,7 +577,7 @@ export const BookingService = {
         //  here we do not need to use our custom AppError because mongoose already has the error pattern for this and our AppError Do Not know about the error. Mongoose does the works for us. 
         }
         };
-  ```
+      ```
     - Inside catch we do not need to use our custom AppError because mongoose already has the error pattern for this and our AppError Do Not know about the error. Mongoose does the works for us.
     - We have to close the transaction and session after successful operation inside try as well like catch 
     -  After success commit the transaction and end the transaction 
@@ -643,7 +643,7 @@ export const BookingService = {
 - final code booking.service.ts 
 
 ```ts 
-const createBooking = async (payload: Partial<IBooking>, userId: string) => {
+    const createBooking = async (payload: Partial<IBooking>, userId: string) => {
 
     const transactionId = getTransactionId()
 
@@ -722,3 +722,100 @@ const createBooking = async (payload: Partial<IBooking>, userId: string) => {
 
 };
 ```
+
+## 31-5 Intro to SSL Commerz , Account Creation Process
+
+[SSLCOMERZ](https://developer.sslcommerz.com/)
+
+#### Create Account 
+- create a sandbox account 
+
+![alt text](image.png)
+
+- in final stage 
+
+![alt text](image-1.png)
+
+#### How sslcommerg payment will be done? 
+-  Frontend(localhost:5173) - User - Tour - Booking (Pending) - Payment(Unpaid) -> SSLCommerz Page -> Payment Complete -> Backend(localhost:5000/api/v1/payment/success) -> Update Payment(PAID) & Booking(CONFIRM) -> redirect to frontend -> Frontend(localhost:5173/payment/success)
+
+- Frontend(localhost:5173) - User - Tour - Booking (Pending) - Payment(Unpaid) -> SSLCommerz Page -> Payment Fail / Cancel -> Backend(localhost:5000) -> Update Payment(FAIL / CANCEL) & Booking(FAIL / CANCEL) -> redirect to frontend -> Frontend(localhost:5173/payment/cancel or localhost:5173/payment/fail)
+
+# SSLCOMMERZ Integration Instructions
+
+## 📝 Registration Links
+
+- For registration in **Sandbox**, click the link:  
+  [https://developer.sslcommerz.com/registration/](https://developer.sslcommerz.com/registration/)
+
+- For registration in **Production**, click the link:  
+  [https://signup.sslcommerz.com/register](https://signup.sslcommerz.com/register)
+
+---
+
+### 🧩 Integration Methods
+
+There are two processes of integration:
+
+1. **SSLCOMMERZ Easy Checkout** in your checkout page  
+2. **Redirect the customer** from your checkout page to **SSLCOMMERZ Hosted page**
+
+---
+
+#### 🔌 Required APIs
+
+You will use **three APIs** of SSLCOMMERZ to complete the integration:
+
+1. **Create and Get Session**  
+2. **Receive Payment Notification (IPN)**  
+3. **Order Validation API**
+
+---
+
+#### ✅ Mandatory Steps
+
+- You must **validate your transaction and amount** by calling the **Order Validation API**  
+- You must **develop the IPN URL** to receive the **payment notification**
+
+---
+
+#### ⚠️ Risk Payments
+
+Sometimes you will get **Risk payments**  
+(In response you will get `risk` properties — value will be:
+
+- `0` for **safe**
+- `1` for **risky**
+
+> It depends on you to provide the service or not.
+
+![alt text](image-2.png)
+
+
+| Step                           | Required | Notes                        |
+| ------------------------------ | -------- | ---------------------------- |
+| Register sandbox/production    | ✅        | Get credentials              |
+| Create payment session         | ✅        | Call API to get session URL  |
+| Setup success/fail/cancel URLs | ✅        | Handle in frontend/backend   |
+| Setup IPN endpoint             | ✅        | For server-side notification |
+| Call validation API            | ✅        | To confirm amount, status    |
+| Handle risk levels             | ✅        | Based on business decision   |
+
+
+![alt text](image-3.png)
+
+#### 🔁 Transaction Initiate
+
+The Steps 1, 2 and 3 are used to make the request for a new transaction. After getting confirmation of checkout from customer, merchant server sends a request to SSLCOMMERZ server to get a Session ID. If all the credentials and mandatory fields are valid, then SSLCOMMERZ provides a Session ID to Merchant System. After receiving the Session ID, Merchant System redirects the customer to payment page with Session ID.
+
+---
+
+#### 📬 Handling Payment Notification
+
+The Step 4 and 5 are processed at this stage. For any notification, SSLCOMMERZ will send HTTP message in POST method called IPN Message to the Listener which is to be configured by the Merchant at their SSLCOMMERZ Administrator Panel. After receiving the message, you must validate the message with Transaction Validation API of SSLCOMMERZ.
+
+---
+
+#### ✅ Service Confirmation
+
+At Step 5, SSLCOMMERZ will redirect the customer to merchant’s side. At this stage, Merchant will display the notification of Service Confirmation.
