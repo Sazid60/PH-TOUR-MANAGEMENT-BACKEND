@@ -822,9 +822,7 @@ At Step 5, SSLCOMMERZ will redirect the customer to merchant’s side. At this s
 
 
 ## 31-6 Setting Up interface for SSL Commerz with env
-- .env
 
-```
 PORT=
 DB_URL=
 NODE_ENV=
