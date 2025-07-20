@@ -510,20 +510,17 @@ export const BookingService = {
    -  inside the catch handle the error of the session and aborting the session 
     
       ```ts
-  const createBooking = async (payload: Partial<IBooking>, userId: string) => {
+      const createBooking = async (payload: Partial<IBooking>, userId: string) => {
+        const transactionId = getTransactionId()
+        // create a session over Booking model since all are happening over booking module 
+        // // 1. start session
+        const session = await Booking.startSession()
+        //2.  start transaction 
+        
+        session.startTransaction()
 
-    const transactionId = getTransactionId()
-
-    // create a session over Booking model since all are happening over booking module 
-
-    // 1. start session
-    const session = await Booking.startSession()
-
-    //2.  start transaction 
-    session.startTransaction()
-
-    // inside the try do all the operation and business logic 
-    try {
+        // inside the try do all the operation and business logic 
+        try {
         // 
 
         const user = await User.findById(userId)
@@ -572,15 +569,14 @@ export const BookingService = {
         session.endSession()
 
         return updatedBooking
-    } catch (error) {
+        } catch (error) {
         // inside the catch handle the error of the session and aborting the session 
         await session.abortTransaction()
         // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
         throw error
         //  here we do not need to use our custom AppError because mongoose already has the error pattern for this and our AppError Do Not know about the error. Mongoose does the works for us. 
-    }
-
-   };
+        }
+        };
   ```
     - Inside catch we do not need to use our custom AppError because mongoose already has the error pattern for this and our AppError Do Not know about the error. Mongoose does the works for us.
     - We have to close the transaction and session after successful operation inside try as well like catch 
