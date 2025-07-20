@@ -479,3 +479,250 @@ export const BookingService = {
 };
 ```
 
+## 31-4 Use Transaction and Rollback for Booking and Payment
+- while creating a booking payment is also getting created and as well the booking is getting updated afterwords. if any error happend in any process this will create a issue. for solving the issue , i mean if any error happens rollback the whole process we have to use `transaction rollback`
+
+#### How Transaction Rollback working ?
+
+
+- Creates a replica of a DB Collection 
+- Creates an environment/ session for all the write operations 
+- If success and no error ! Replica DB -> [ Create Booking -> Create Payment ->  Update Booking] -> Real DB 
+- If Any Error Happens In any stage Replica DB -> [ Create Booking -> Create Payment ->  Update Booking -> Error] -> Rollback The process
+
+#### Lets do code for it 
+
+- remember transaction rollback is done when parallel write operation is done in different collection at a time 
+
+1. create and start the session 
+  - create a session over Booking model since all are happening over booking module 
+  
+  ```ts
+    // 1. start session
+    const session = await Booking.startSession()
+
+    //2.  start transaction 
+    session.startTransaction()
+  ```
+
+2. apply try catch and
+   - inside the try do all the operation and business logic 
+   -  inside the catch handle the error of the session and aborting the session 
+    
+      ```ts
+  const createBooking = async (payload: Partial<IBooking>, userId: string) => {
+
+    const transactionId = getTransactionId()
+
+    // create a session over Booking model since all are happening over booking module 
+
+    // 1. start session
+    const session = await Booking.startSession()
+
+    //2.  start transaction 
+    session.startTransaction()
+
+    // inside the try do all the operation and business logic 
+    try {
+        // 
+
+        const user = await User.findById(userId)
+        if (!user?.phone || !user?.address) {
+            throw new AppError(httpStatus.BAD_REQUEST, "Please Add Phone Number and Address In Your Profile For Booking!")
+        }
+
+        const tour = await Tour.findById(payload.tour).select("costFrom")
+
+        if (!tour?.costFrom) {
+            throw new AppError(httpStatus.BAD_REQUEST, "Tour Cost is Not Added!, Wait Until Cost Is Added!")
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const amount = Number(tour.costFrom) * Number(payload.guestCount!)
+
+
+
+        const booking = await Booking.create({
+            user: userId,
+            status: BOOKING_STATUS.PENDING,
+            ...payload
+        })
+
+        const payment = await Payment.create({
+            booking: booking._id,
+            status: PAYMENT_STATUS.UNPAID,
+            transactionId: transactionId,
+            amount
+
+        })
+
+        const updatedBooking = await Booking.findByIdAndUpdate(
+            booking._id,
+            { payment: payment._id },
+            { runValidators: true, new: true }
+        )
+            .populate("user", "name email address")
+            .populate("tour", "title costFrom")
+            .populate("payment")
+
+
+        // After success commit the transaction and end the transaction 
+        // here committing means inserting all the operation data to actual db from virtual database copy. 
+        await session.commitTransaction(); //transaction
+        session.endSession()
+
+        return updatedBooking
+    } catch (error) {
+        // inside the catch handle the error of the session and aborting the session 
+        await session.abortTransaction()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+        //  here we do not need to use our custom AppError because mongoose already has the error pattern for this and our AppError Do Not know about the error. Mongoose does the works for us. 
+    }
+
+   };
+  ```
+    - Inside catch we do not need to use our custom AppError because mongoose already has the error pattern for this and our AppError Do Not know about the error. Mongoose does the works for us.
+    - We have to close the transaction and session after successful operation inside try as well like catch 
+    -  After success commit the transaction and end the transaction 
+    - here committing means inserting all the operation data to actual db from virtual database copy. 
+
+#### Our Pattern is ready now. 
+- lets touch the operations now because session has its own pattern of operation 
+
+- remember we have to give sessions for the write operations and all the read operations automatically be done under the session. 
+```ts 
+        const booking = await Booking.create([{
+            user: userId,
+            status: BOOKING_STATUS.PENDING,
+            ...payload
+        }], { session })
+```
+- feels different? yeah Its the pattern of session. we have to keep the first parameters inside an array and second parameter i means session will be inside an object 
+- and overall it will return an array which will contain the array(operation commands) and object(session) inside an array. 
+- The first argument must be an array (even if you're creating a single document).
+- The second argument is an options object, where you pass the session: { session }.
+- The return value of .create() (in this array format) will be an array of created documents, so to access the document, use booking[0].
+- If we want to use anything from it we have to destructure it from the array. like  `booking[0]._id,` as the first index holds the data and second index holds the session
+
+```ts 
+        const payment = await Payment.create(
+            [
+                {
+                    booking: booking[0]._id,
+                    status: PAYMENT_STATUS.UNPAID,
+                    transactionId: transactionId,
+                    amount
+                }
+            ],
+            { session }
+        )
+
+```
+
+- remember we do not have to keep fist parameter in array for `findByIdAndUpdate`. because It doesn't perform a bulk insert — it updates a single document and returns it. Even for one document, when using sessions, `.create()` internally switches to a bulk insert behavior to ensure transactional safety.
+
+```ts 
+        const updatedBooking = await Booking
+            .findByIdAndUpdate(
+                booking[0]._id,
+                { payment: payment[0]._id },
+                { new: true, runValidators: true, session }
+            )
+            .populate("user", "name email phone address")
+            .populate("tour", "title costFrom")
+            .populate("payment");
+```
+
+| Operation              | Needs array? | Session support? | Notes                                          |
+| ---------------------- | ------------ | ---------------- | ---------------------------------------------- |
+| `.create()`            | ✅ Yes        | ✅ Yes            | Must be array when used with session           |
+| `.insertMany()`        | ✅ Yes        | ✅ Yes            | Same as above                                  |
+| `.findOneAndUpdate()`  | ❌ No         | ✅ Yes            | Accepts a filter object and works with session |
+| `.findByIdAndUpdate()` | ❌ No         | ✅ Yes            | Accepts ID directly                            |
+| `.updateOne()`         | ❌ No         | ✅ Yes            | Accepts filter + update object                 |
+| `.deleteOne()`         | ❌ No         | ✅ Yes            | Standard query-based delete                    |
+| `.deleteMany()`        | ❌ No         | ✅ Yes            | For bulk deletes                               |
+
+- final code booking.service.ts 
+
+```ts 
+const createBooking = async (payload: Partial<IBooking>, userId: string) => {
+
+    const transactionId = getTransactionId()
+
+    // create a session over Booking model since all are happening over booking module 
+
+    // 1. start session
+    const session = await Booking.startSession()
+
+    //2.  start transaction 
+    session.startTransaction()
+
+    // inside the try do all the operation and business logic 
+    try {
+        // 
+
+        const user = await User.findById(userId)
+        if (!user?.phone || !user?.address) {
+            throw new AppError(httpStatus.BAD_REQUEST, "Please Add Phone Number and Address In Your Profile For Booking!")
+        }
+
+        const tour = await Tour.findById(payload.tour).select("costFrom")
+
+        if (!tour?.costFrom) {
+            throw new AppError(httpStatus.BAD_REQUEST, "Tour Cost is Not Added!, Wait Until Cost Is Added!")
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const amount = Number(tour.costFrom) * Number(payload.guestCount!)
+
+
+
+        const booking = await Booking.create([{
+            user: userId,
+            status: BOOKING_STATUS.PENDING,
+            ...payload
+        }], { session })
+
+
+
+        const payment = await Payment.create(
+            [
+                {
+                    booking: booking[0]._id,
+                    status: PAYMENT_STATUS.UNPAID,
+                    transactionId: transactionId,
+                    amount
+                }
+            ],
+            { session }
+        )
+
+        const updatedBooking = await Booking
+            .findByIdAndUpdate(
+                booking[0]._id,
+                { payment: payment[0]._id },
+                { new: true, runValidators: true, session }
+            )
+            .populate("user", "name email phone address")
+            .populate("tour", "title costFrom")
+            .populate("payment");
+
+
+        // After success commit the transaction and end the transaction 
+        // here committing means inserting all the operation data to actual db from virtual database copy. 
+        await session.commitTransaction(); //transaction
+        session.endSession()
+
+        return updatedBooking
+    } catch (error) {
+        // inside the catch handle the error of the session and aborting the session 
+        await session.abortTransaction()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+        //  here we do not need to use our custom AppError because mongoose already has the error pattern for this and our AppError Do Not know about the error. Mongoose does the works for us. 
+    }
+
+};
+```
