@@ -85,16 +85,16 @@ const updateUser = async (userId: string, payload: Partial<IUser>, decodedToken:
     }
 
     // new update 
-    if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
-        if (userId !== decodedToken.userId) {
-            throw new AppError(httpStatus.FORBIDDEN, "You are unauthorized to update another user's profile");
-        }
-    }
+    // if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+    //     if (userId !== decodedToken.userId) {
+    //         throw new AppError(httpStatus.FORBIDDEN, "You are unauthorized to update another user's profile");
+    //     }
+    // }
 
 
-    if (decodedToken.role === Role.ADMIN && ifUserExist.role === Role.SUPER_ADMIN) {
-        throw new AppError(httpStatus.FORBIDDEN, "You are not authorized to update a super admin profile");
-    }
+    // if (decodedToken.role === Role.ADMIN && ifUserExist.role === Role.SUPER_ADMIN) {
+    //     throw new AppError(httpStatus.FORBIDDEN, "You are not authorized to update a super admin profile");
+    // }
 
     // new update 
 

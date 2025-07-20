@@ -40,4 +40,4 @@ const paymentSchema = new Schema<IPayment>(
     }
 )
 
-export const Booking = model<IPayment>("Payment", paymentSchema)
+export const Payment = model<IPayment>("Payment", paymentSchema)
