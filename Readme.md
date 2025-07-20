@@ -1206,3 +1206,410 @@ export const PaymentService = {
 };
 ```
 
+## 31-8 Complete Fail and Cancel Payment , Create additional API to initialize Payment for a Booking
+
+- payment.route.ts 
+
+```ts 
+
+import express from "express";
+import { PaymentController } from "./payment.controller";
+
+
+const router = express.Router();
+
+router.post("/success", PaymentController.successPayment);
+router.post("/fail", PaymentController.failPayment);
+router.post("/cancel", PaymentController.cancelPayment);
+export const PaymentRoutes = router;
+```
+
+- payment.controller.ts
+
+```ts 
+import { Request, Response } from "express";
+import { envVars } from "../../config/env";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { PaymentService } from "./payment.service";
+
+const successPayment = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await PaymentService.successPayment(query as Record<string, string>)
+
+    if (result.success) {
+        res.redirect(`${envVars.SSL.SSL_SUCCESS_FRONTEND_URL}?transactionId=${query.transactionId}&message=${result.message}&amount=${query.amount}&status=${query.status}`)
+    }
+});
+const failPayment = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await PaymentService.failPayment(query as Record<string, string>)
+
+    if (!result.success) {
+        res.redirect(`${envVars.SSL.SSL_FAIL_FRONTEND_URL}?transactionId=${query.transactionId}&message=${result.message}&amount=${query.amount}&status=${query.status}`)
+    }
+});
+const cancelPayment = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await PaymentService.cancelPayment(query as Record<string, string>)
+
+    if (!result.success) {
+        res.redirect(`${envVars.SSL.SSL_CANCEL_FRONTEND_URL}?transactionId=${query.transactionId}&message=${result.message}&amount=${query.amount}&status=${query.status}`)
+    }
+});
+
+export const PaymentController = {
+    successPayment,
+    failPayment,
+    cancelPayment,
+};
+```
+
+- payment.service.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import httpStatus from "http-status-codes";
+import AppError from "../../errorHelpers/AppError";
+import { BOOKING_STATUS } from "../booking/booking.interface";
+import { Booking } from "../booking/booking.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+import { PAYMENT_STATUS } from "./payment.interface";
+import { Payment } from "./payment.model";
+const successPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to COnfirm 
+    // Update Payment Status to PAID
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.PAID,
+        }, { new: true, runValidators: true, session: session })
+
+        await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.COMPLETE },
+                { runValidators: true, session }
+            )
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: true, message: "Payment Completed Successfully" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+const failPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to FAIL
+    // Update Payment Status to FAIL
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.FAILED,
+        }, { new: true, runValidators: true, session: session })
+
+        await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.FAILED },
+                { runValidators: true, session }
+            )
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: false, message: "Payment Failed" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+const cancelPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to CANCEL
+    // Update Payment Status to CANCEL
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.CANCELLED,
+        }, { runValidators: true, session: session })
+
+        await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.CANCEL },
+                { runValidators: true, session }
+            )
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: false, message: "Payment Cancelled" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+
+
+export const PaymentService = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+};
+
+```
+
+- all cancel and failure payment method data updating mechanism added
+
+#### Now there is work left. Its like if anyone cancels the payment intentionally or insufficient payment we have to keep option for doing payment for the booking again.
+
+
+- payment.route.ts 
+
+```ts 
+import express from "express";
+import { PaymentController } from "./payment.controller";
+
+
+const router = express.Router();
+
+
+router.post("/init-payment/:bookingId", PaymentController.initPayment);
+router.post("/success", PaymentController.successPayment);
+router.post("/fail", PaymentController.failPayment);
+router.post("/cancel", PaymentController.cancelPayment);
+export const PaymentRoutes = router;
+```
+
+- payment.controller.ts
+
+```ts 
+import { Request, Response } from "express";
+import { envVars } from "../../config/env";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { PaymentService } from "./payment.service";
+
+
+const initPayment = catchAsync(async (req: Request, res: Response) => {
+    const bookingId = req.params.bookingId;
+    const result = await PaymentService.initPayment(bookingId as string)
+    sendResponse(res, {
+        statusCode: 201,
+        success: true,
+        message: "Payment done successfully",
+        data: result,
+    });
+});
+const successPayment = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await PaymentService.successPayment(query as Record<string, string>)
+
+    if (result.success) {
+        res.redirect(`${envVars.SSL.SSL_SUCCESS_FRONTEND_URL}?transactionId=${query.transactionId}&message=${result.message}&amount=${query.amount}&status=${query.status}`)
+    }
+});
+const failPayment = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await PaymentService.failPayment(query as Record<string, string>)
+
+    if (!result.success) {
+        res.redirect(`${envVars.SSL.SSL_FAIL_FRONTEND_URL}?transactionId=${query.transactionId}&message=${result.message}&amount=${query.amount}&status=${query.status}`)
+    }
+});
+const cancelPayment = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await PaymentService.cancelPayment(query as Record<string, string>)
+
+    if (!result.success) {
+        res.redirect(`${envVars.SSL.SSL_CANCEL_FRONTEND_URL}?transactionId=${query.transactionId}&message=${result.message}&amount=${query.amount}&status=${query.status}`)
+    }
+});
+
+export const PaymentController = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+};
+```
+
+- payment.service.ts 
+
+```ts 
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import httpStatus from "http-status-codes";
+import AppError from "../../errorHelpers/AppError";
+import { BOOKING_STATUS } from "../booking/booking.interface";
+import { Booking } from "../booking/booking.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+import { PAYMENT_STATUS } from "./payment.interface";
+import { Payment } from "./payment.model";
+
+const initPayment = async (bookingId: string) => {
+
+    const payment = await Payment.findOne({ booking: bookingId })
+
+    if (!payment) {
+        throw new AppError(httpStatus.NOT_FOUND, "Payment Not Found. You have not booked this tour")
+    }
+
+    const booking = await Booking.findById(payment.booking)
+
+    const userAddress = (booking?.user as any).address
+    const userEmail = (booking?.user as any).email
+    const userPhoneNumber = (booking?.user as any).phone
+    const userName = (booking?.user as any).name
+
+    const sslPayload: ISSLCommerz = {
+        address: userAddress,
+        email: userEmail,
+        phoneNumber: userPhoneNumber,
+        name: userName,
+        amount: payment.amount,
+        transactionId: payment.transactionId
+    }
+
+    const sslPayment = await SSLService.sslPaymentInit(sslPayload)
+
+    return {
+        paymentUrl: sslPayment.GatewayPageURL
+    }
+
+};
+const successPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to COnfirm 
+    // Update Payment Status to PAID
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.PAID,
+        }, { new: true, runValidators: true, session: session })
+
+        await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.COMPLETE },
+                { runValidators: true, session }
+            )
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: true, message: "Payment Completed Successfully" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+const failPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to FAIL
+    // Update Payment Status to FAIL
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.FAILED,
+        }, { new: true, runValidators: true, session: session })
+
+        await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.FAILED },
+                { runValidators: true, session }
+            )
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: false, message: "Payment Failed" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+const cancelPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to CANCEL
+    // Update Payment Status to CANCEL
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.CANCELLED,
+        }, { runValidators: true, session: session })
+
+        await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.CANCEL },
+                { runValidators: true, session }
+            )
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: false, message: "Payment Cancelled" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+
+
+export const PaymentService = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+};
+```
+
+## 31-9 Concept behind Validating a Payment in SSLCommerz with IPN (Instant Payment Notification)
+- when payment is successful it will call the IPN url we have set. which is a backend url post request and will pass us `val_id` and then we will give the `val_id` to their another post request. in response sslcomerze will give us Paymentgetway data and invoice url and we will update it inside the payment collection. 
+- There is a problem that we can not implement this or we can not set the IPN as local host. project must be deployed
