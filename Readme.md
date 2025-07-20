@@ -1609,3 +1609,7 @@ export const PaymentService = {
     cancelPayment,
 };
 ```
+
+## 31-9 Concept behind Validating a Payment in SSLCommerz with IPN (Instant Payment Notification)
+- when payment is successful it will call the IPN url we have set. which is a backend url post request and will pass us `val_id` and then we will give the `val_id` to their another post request. in response sslcomerze will give us Paymentgetway data and invoice url and we will update it inside the payment collection. 
+- There is a problem that we can not implement this or we can not set the IPN as local host. project must be deployed
