@@ -741,9 +741,9 @@ export const BookingService = {
 
 - Frontend(localhost:5173) - User - Tour - Booking (Pending) - Payment(Unpaid) -> SSLCommerz Page -> Payment Fail / Cancel -> Backend(localhost:5000) -> Update Payment(FAIL / CANCEL) & Booking(FAIL / CANCEL) -> redirect to frontend -> Frontend(localhost:5173/payment/cancel or localhost:5173/payment/fail)
 
-# SSLCOMMERZ Integration Instructions
+## SSLCOMMERZ Integration Instructions
 
-## 📝 Registration Links
+### 📝 Registration Links
 
 - For registration in **Sandbox**, click the link:  
   [https://developer.sslcommerz.com/registration/](https://developer.sslcommerz.com/registration/)
@@ -819,3 +819,231 @@ The Step 4 and 5 are processed at this stage. For any notification, SSLCOMMERZ w
 #### ✅ Service Confirmation
 
 At Step 5, SSLCOMMERZ will redirect the customer to merchant’s side. At this stage, Merchant will display the notification of Service Confirmation.
+
+
+## 31-6 Setting Up interface for SSL Commerz with env
+- .env
+
+```
+PORT=
+DB_URL=
+NODE_ENV=
+BCRYPT_SALT_ROUND=
+JWT_ACCESS_SECRET=""
+JWT_ACCESS_EXPIRES=""
+JWT_REFRESH_SECRET=""
+JWT_REFRESH_EXPIRES=""
+SUPER_ADMIN_EMAIL=
+SUPER_ADMIN_PASSWORD=
+# google 
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_CALLBACK_URL=
+# This is the URL where Google will send the user back after a successful login using Google OAuth.
+
+
+# express session 
+EXPRESS_SESSION_SECRET=
+
+# frontend url 
+FRONTEND_URL=
+
+
+## SSLCOMMERG
+
+SSL_STORE_ID=""
+SSL_STORE_PASS=""
+SSL_PAYMENT_API=""
+SSL_VALIDATION_API=""
+
+# SSL Commerz BACKEND URLs
+SSL_SUCCESS_BACKEND_URL=""
+SSL_FAIL_BACKEND_URL=""
+SSL_CANCEL_BACKEND_URL=""
+
+# SSL Commerz FRONTEND URLs
+SSL_SUCCESS_FRONTEND_URL=""
+SSL_FAIL_FRONTEND_URL=""
+SSL_CANCEL_FRONTEND_URL=""
+```
+- config -> env.ts 
+
+```ts 
+import dotenv from "dotenv";
+
+dotenv.config()
+
+interface EnvConfig {
+    PORT: string,
+    DB_URL: string,
+    NODE_ENV: "development" | "production",
+    BCRYPT_SALT_ROUND: string,
+    JWT_ACCESS_SECRET: string,
+    JWT_ACCESS_EXPIRES: string,
+    JWT_REFRESH_SECRET: string,
+    JWT_REFRESH_EXPIRES: string,
+    SUPER_ADMIN_EMAIL: string,
+    SUPER_ADMIN_PASSWORD: string,
+    GOOGLE_CLIENT_SECRET: string,
+    GOOGLE_CLIENT_ID: string,
+    GOOGLE_CALLBACK_URL: string,
+    EXPRESS_SESSION_SECRET: string,
+    FRONTEND_URL: string,
+    SSL: {
+        STORE_ID: string,
+        STORE_PASS: string,
+        SSL_PAYMENT_API: string,
+        SSL_VALIDATION_API: string,
+        SSL_SUCCESS_FRONTEND_URL: string,
+        SSL_FAIL_FRONTEND_URL: string,
+        SSL_CANCEL_FRONTEND_URL: string,
+        SSL_SUCCESS_BACKEND_URL: string,
+        SSL_FAIL_BACKEND_URL: string,
+        SSL_CANCEL_BACKEND_URL: string,
+    };
+
+}
+
+const loadEnvVariables = (): EnvConfig => {
+    const requiredEnvVariables: string[] = ["PORT", "DB_URL", "NODE_ENV", "BCRYPT_SALT_ROUND", "JWT_ACCESS_EXPIRES", "JWT_ACCESS_SECRET", "SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "JWT_REFRESH_SECRET", "JWT_REFRESH_EXPIRES", "GOOGLE_CLIENT_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CALLBACK_URL", "EXPRESS_SESSION_SECRET", "FRONTEND_URL",
+        "SSL_STORE_ID",
+        "SSL_STORE_PASS",
+        "SSL_PAYMENT_API",
+        "SSL_VALIDATION_API",
+        "SSL_SUCCESS_FRONTEND_URL",
+        "SSL_FAIL_FRONTEND_URL",
+        "SSL_CANCEL_FRONTEND_URL",
+        "SSL_SUCCESS_BACKEND_URL",
+        "SSL_FAIL_BACKEND_URL",
+        "SSL_CANCEL_BACKEND_URL",
+    ];
+    ;
+
+    requiredEnvVariables.forEach(key => {
+        if (!process.env[key]) {
+            throw new Error(`Missing require environment variabl ${key}`)
+        }
+    })
+
+    return {
+        PORT: process.env.PORT as string,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        DB_URL: process.env.DB_URL!,
+        NODE_ENV: process.env.NODE_ENV as "development" | "production",
+        BCRYPT_SALT_ROUND: process.env.BCRYPT_SALT_ROUND as string,
+        JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET as string,
+        JWT_ACCESS_EXPIRES: process.env.JWT_ACCESS_EXPIRES as string,
+        JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET as string,
+        JWT_REFRESH_EXPIRES: process.env.JWT_REFRESH_EXPIRES as string,
+        SUPER_ADMIN_EMAIL: process.env.SUPER_ADMIN_EMAIL as string,
+        SUPER_ADMIN_PASSWORD: process.env.SUPER_ADMIN_PASSWORD as string,
+        GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET as string,
+        GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID as string,
+        GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL as string,
+        EXPRESS_SESSION_SECRET: process.env.EXPRESS_SESSION_SECRET as string,
+        FRONTEND_URL: process.env.FRONTEND_URL as string,
+
+        SSL: {
+            STORE_ID: process.env.SSL_STORE_ID as string,
+            STORE_PASS: process.env.SSL_STORE_PASS as string,
+            SSL_PAYMENT_API: process.env.SSL_PAYMENT_API as string,
+            SSL_VALIDATION_API: process.env.SSL_VALIDATION_API as string,
+            SSL_SUCCESS_FRONTEND_URL: process.env.SSL_SUCCESS_FRONTEND_URL as string,
+            SSL_FAIL_FRONTEND_URL: process.env.SSL_FAIL_FRONTEND_URL as string,
+            SSL_CANCEL_FRONTEND_URL: process.env.SSL_CANCEL_FRONTEND_URL as string,
+            SSL_SUCCESS_BACKEND_URL: process.env.SSL_SUCCESS_BACKEND_URL as string,
+            SSL_FAIL_BACKEND_URL: process.env.SSL_FAIL_BACKEND_URL as string,
+            SSL_CANCEL_BACKEND_URL: process.env.SSL_CANCEL_BACKEND_URL as string,
+        },
+    }
+}
+
+export const envVars = loadEnvVariables()
+```
+
+#### lets initialize payment 
+
+- sslCommerz.interface.ts 
+
+```ts 
+export interface ISSLCommerz {
+    amount: number;
+    transactionId: string;
+    name: string,
+    email: string,
+    phoneNumber: string;
+    address: string
+}
+```
+
+- for fetch we will use axios instead of raw fetch. for sslcommerz server communication 
+
+```
+npm i axios
+```
+
+- sslCommerz.service.ts 
+
+```ts 
+import axios from "axios"
+import httpStatus from "http-status-codes"
+import { envVars } from "../../config/env"
+import AppError from "../../errorHelpers/AppError"
+import { ISSLCommerz } from "./sslCommerz.interface"
+
+const sslPaymentInit = async (payload: ISSLCommerz) => {
+
+    try {
+        const data = {
+            store_id: envVars.SSL.STORE_ID,
+            store_passwd: envVars.SSL.STORE_PASS,
+            total_amount: payload.amount,
+            currency: "BDT",
+            tran_id: payload.transactionId,
+            success_url: `${envVars.SSL.SSL_SUCCESS_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=success`,
+            fail_url: `${envVars.SSL.SSL_FAIL_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=fail`,
+            cancel_url: `${envVars.SSL.SSL_CANCEL_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=cancel`,
+            // ipn_url: "http://localhost:3030/ipn",
+            shipping_method: "N/A",
+            product_name: "Tour",
+            product_category: "Service",
+            product_profile: "general",
+            cus_name: payload.name,
+            cus_email: payload.email,
+            cus_add1: payload.address,
+            cus_add2: "N/A",
+            cus_city: "Dhaka",
+            cus_state: "Dhaka",
+            cus_postcode: "1000",
+            cus_country: "Bangladesh",
+            cus_phone: payload.phoneNumber,
+            cus_fax: "01711111111",
+            ship_name: "N/A",
+            ship_add1: "N/A",
+            ship_add2: "N/A",
+            ship_city: "N/A",
+            ship_state: "N/A",
+            ship_postcode: 1000,
+            ship_country: "N/A",
+        }
+
+        const response = await axios({
+            method: "POST",
+            url: envVars.SSL.SSL_PAYMENT_API,
+            data: data,
+            headers: { "Content-Type": "application/x-www-form-urlencoded" }
+        })
+
+        return response.data;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+        console.log("Payment Error Occured", error);
+        throw new AppError(httpStatus.BAD_REQUEST, error.message)
+    }
+}
+
+export const SSLService = {
+    sslPaymentInit
+}
+
+```
