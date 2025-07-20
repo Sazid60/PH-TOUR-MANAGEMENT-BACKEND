@@ -1,3 +1,5 @@
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import AppError from "../../errorHelpers/AppError";
 import { User } from "../user/user.model";
 import { BOOKING_STATUS, IBooking } from "./booking.interface";
@@ -6,6 +8,8 @@ import { Booking } from "./booking.model";
 import { Payment } from "../payment/payment.model";
 import { PAYMENT_STATUS } from "../payment/payment.interface";
 import { Tour } from "../tour/tour.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
 
 
 const getTransactionId = () => {
@@ -75,12 +79,39 @@ const createBooking = async (payload: Partial<IBooking>, userId: string) => {
             .populate("payment");
 
 
+        // for sslCommerz
+
+        //we are forcefully saying that you are not a objectId 
+        // we are doing like this because these fields are coming from the populated field 
+        const userAddress = (updatedBooking?.user as any).address
+        const userEmail = (updatedBooking?.user as any).email
+        const userPhoneNumber = (updatedBooking?.user as any).phone
+        const userName = (updatedBooking?.user as any).name
+
+        const sslPayload: ISSLCommerz = {
+            address: userAddress,
+            email: userEmail,
+            phoneNumber: userPhoneNumber,
+            name: userName,
+            amount: amount,
+            transactionId: transactionId
+        }
+        // initiate the sslCommerg
+
+        const sslPayment = await SSLService.sslPaymentInit(sslPayload)
+
+
+
         // After success commit the transaction and end the transaction 
         // here committing means inserting all the operation data to actual db from virtual database copy. 
         await session.commitTransaction(); //transaction
         session.endSession()
 
-        return updatedBooking
+        return {
+            paymentUrl: sslPayment.GatewayPageURL,
+            booking: updatedBooking
+        }
+
     } catch (error) {
         // inside the catch handle the error of the session and aborting the session 
         await session.abortTransaction()
