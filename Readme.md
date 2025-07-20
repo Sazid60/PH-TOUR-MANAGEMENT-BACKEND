@@ -910,3 +910,299 @@ export const SSLService = {
 }
 
 ```
+
+
+## 31-7 Complete Initializing Payment with SSLCommerz
+- booking.service.ts 
+
+```ts 
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import AppError from "../../errorHelpers/AppError";
+import { User } from "../user/user.model";
+import { BOOKING_STATUS, IBooking } from "./booking.interface";
+import httpStatus from 'http-status-codes';
+import { Booking } from "./booking.model";
+import { Payment } from "../payment/payment.model";
+import { PAYMENT_STATUS } from "../payment/payment.interface";
+import { Tour } from "../tour/tour.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+
+
+const getTransactionId = () => {
+    return `tran_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+}
+
+const createBooking = async (payload: Partial<IBooking>, userId: string) => {
+
+    const transactionId = getTransactionId()
+
+    // create a session over Booking model since all are happening over booking module 
+
+    // 1. start session
+    const session = await Booking.startSession()
+
+    //2.  start transaction 
+    session.startTransaction()
+
+    // inside the try do all the operation and business logic 
+    try {
+        // 
+
+        const user = await User.findById(userId)
+        if (!user?.phone || !user?.address) {
+            throw new AppError(httpStatus.BAD_REQUEST, "Please Add Phone Number and Address In Your Profile For Booking!")
+        }
+
+        const tour = await Tour.findById(payload.tour).select("costFrom")
+
+        if (!tour?.costFrom) {
+            throw new AppError(httpStatus.BAD_REQUEST, "Tour Cost is Not Added!, Wait Until Cost Is Added!")
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const amount = Number(tour.costFrom) * Number(payload.guestCount!)
+
+
+
+        const booking = await Booking.create([{
+            user: userId,
+            status: BOOKING_STATUS.PENDING,
+            ...payload
+        }], { session })
+
+
+
+        const payment = await Payment.create(
+            [
+                {
+                    booking: booking[0]._id,
+                    status: PAYMENT_STATUS.UNPAID,
+                    transactionId: transactionId,
+                    amount
+                }
+            ],
+            { session }
+        )
+
+        const updatedBooking = await Booking
+            .findByIdAndUpdate(
+                booking[0]._id,
+                { payment: payment[0]._id },
+                { new: true, runValidators: true, session }
+            )
+            .populate("user", "name email phone address")
+            .populate("tour", "title costFrom")
+            .populate("payment");
+
+
+        // for sslCommerz
+
+        //we are forcefully saying that you are not a objectId 
+        // we are doing like this because these fields are coming from the populated field 
+        const userAddress = (updatedBooking?.user as any).address
+        const userEmail = (updatedBooking?.user as any).email
+        const userPhoneNumber = (updatedBooking?.user as any).phone
+        const userName = (updatedBooking?.user as any).name
+
+        const sslPayload: ISSLCommerz = {
+            address: userAddress,
+            email: userEmail,
+            phoneNumber: userPhoneNumber,
+            name: userName,
+            amount: amount,
+            transactionId: transactionId
+        }
+        // initiate the sslCommerg
+
+        const sslPayment = await SSLService.sslPaymentInit(sslPayload)
+
+
+
+        // After success commit the transaction and end the transaction 
+        // here committing means inserting all the operation data to actual db from virtual database copy. 
+        await session.commitTransaction(); //transaction
+        session.endSession()
+
+        return {
+            paymentUrl: sslPayment.GatewayPageURL,
+            booking: updatedBooking
+        }
+
+    } catch (error) {
+        // inside the catch handle the error of the session and aborting the session 
+        await session.abortTransaction()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+        //  here we do not need to use our custom AppError because mongoose already has the error pattern for this and our AppError Do Not know about the error. Mongoose does the works for us. 
+    }
+
+};
+
+
+
+export const BookingService = {
+    createBooking,
+};
+```
+
+- from here it will init the sslComerz 
+- sslComerz.service.ts 
+
+```ts 
+import axios from "axios"
+import httpStatus from "http-status-codes"
+import { envVars } from "../../config/env"
+import AppError from "../../errorHelpers/AppError"
+import { ISSLCommerz } from "./sslCommerz.interface"
+
+const sslPaymentInit = async (payload: ISSLCommerz) => {
+
+    try {
+        const data = {
+            store_id: envVars.SSL.STORE_ID,
+            store_passwd: envVars.SSL.STORE_PASS,
+            total_amount: payload.amount,
+            currency: "BDT",
+            tran_id: payload.transactionId,
+            success_url: `${envVars.SSL.SSL_SUCCESS_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=success`, //takes to default post 
+            fail_url: `${envVars.SSL.SSL_FAIL_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=fail`, //takes to default post 
+            cancel_url: `${envVars.SSL.SSL_CANCEL_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=cancel`, //takes to default post 
+            // ipn_url: "http://localhost:3030/ipn",
+            shipping_method: "N/A",
+            product_name: "Tour",
+            product_category: "Service",
+            product_profile: "general",
+            cus_name: payload.name,
+            cus_email: payload.email,
+            cus_add1: payload.address,
+            cus_add2: "N/A",
+            cus_city: "Dhaka",
+            cus_state: "Dhaka",
+            cus_postcode: "1000",
+            cus_country: "Bangladesh",
+            cus_phone: payload.phoneNumber,
+            cus_fax: "01711111111",
+            ship_name: "N/A",
+            ship_add1: "N/A",
+            ship_add2: "N/A",
+            ship_city: "N/A",
+            ship_state: "N/A",
+            ship_postcode: 1000,
+            ship_country: "N/A",
+        }
+
+        const response = await axios({
+            method: "POST",
+            url: envVars.SSL.SSL_PAYMENT_API,
+            data: data,
+            headers: { "Content-Type": "application/x-www-form-urlencoded" }
+        })
+
+        return response.data;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+        console.log("Payment Error Occured", error);
+        throw new AppError(httpStatus.BAD_REQUEST, error.message)
+    }
+}
+
+export const SSLService = {
+    sslPaymentInit
+}
+```
+
+- then it will redirect to ssl payment page 
+- After successful payment it will hit a backend api and update the booking and payment collection 
+
+- payment.route.ts 
+
+```ts 
+import express from "express";
+import { PaymentController } from "./payment.controller";
+
+
+const router = express.Router();
+
+
+router.post("/success", PaymentController.successPayment);
+export const PaymentRoutes = router;
+```
+
+- payment.controller.ts 
+
+```ts 
+import { Request, Response } from "express";
+import { envVars } from "../../config/env";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { PaymentService } from "./payment.service";
+
+
+
+const successPayment = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await PaymentService.successPayment(query as Record<string, string>)
+
+    if (result.success) {
+        res.redirect(`${envVars.SSL.SSL_SUCCESS_FRONTEND_URL}?transactionId=${query.transactionId}&message=${result.message}&amount=${query.amount}&status=${query.status}`)
+    }
+});
+
+
+export const PaymentController = {
+    successPayment,
+};
+```
+- we will not use sendResponse in the controller because there is nothing to send response
+- payment.service.ts 
+
+```ts 
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import httpStatus from "http-status-codes";
+import AppError from "../../errorHelpers/AppError";
+import { BOOKING_STATUS } from "../booking/booking.interface";
+import { Booking } from "../booking/booking.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+import { PAYMENT_STATUS } from "./payment.interface";
+import { Payment } from "./payment.model";
+
+const successPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to COnfirm 
+    // Update Payment Status to PAID
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.PAID,
+        }, { new: true, runValidators: true, session: session })
+
+        await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.COMPLETE },
+                { runValidators: true, session }
+            )
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: true, message: "Payment Completed Successfully" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        throw error
+    }
+};
+
+
+export const PaymentService = {
+    successPayment,
+};
+```
+
