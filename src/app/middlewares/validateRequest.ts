@@ -6,6 +6,7 @@ export const validateRequest = (zodSchema: AnyZodObject) => async (req: Request,
 
     try {
         // console.log("Old Body", req.body)
+        req.body = JSON.parse(req.body.data) || req.body // for multer
         req.body = await zodSchema.parseAsync(req.body)
         // console.log("New Body", req.body)
         // here data sanitization is working. 

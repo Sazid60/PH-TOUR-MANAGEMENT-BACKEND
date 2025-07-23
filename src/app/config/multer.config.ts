@@ -9,7 +9,6 @@ const storage = new CloudinaryStorage({
         public_id: (req, file) => {
             // My Special.Image#!@.png => 4545adsfsadf-45324263452-my-image.png
             // My Special.Image#!@.png => [My Special, Image#!@, png]
-
             const fileName = file.originalname
                 .toLowerCase()
                 .replace(/\s+/g, "-") // empty space remove replace with dash

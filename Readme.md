@@ -114,7 +114,8 @@ import { CloudinaryStorage } from "multer-storage-cloudinary";
 
 
 const storage = new CloudinaryStorage({
-    cloudinary: cloudinaryUpload,
+    cloudinary: cloudinaryUpload, // file 
+    // options
     params: {
         public_id: (req, file) => {
             // My Special.Image#!@.png => 4545adsfsadf-45324263452-my-image.png
@@ -141,3 +142,175 @@ const storage = new CloudinaryStorage({
 
 export const multerUpload = multer({ storage: storage })
 ```
+
+
+## 32-3 Upload Single Image for Division 
+
+- division.route.ts
+
+
+```ts 
+import { Router } from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { Role } from "../user/user.interface";
+import { createDivisionSchema, updateDivisionSchema } from "./division.validation";
+import { DivisionController } from "./division.controller";
+import { multerUpload } from "../../config/multer.config";
+
+
+
+const router = Router()
+
+/*
+ {
+
+ file : Image
+ data : body text data => req.body => req.body.data
+ }
+*/
+// Form data -> body, file
+
+router.post(
+    "/create",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.single("file"),
+    validateRequest(createDivisionSchema),
+    DivisionController.createDivision
+);
+
+export const DivisionRoutes = router
+
+```
+
+- division.controller.ts 
+
+
+```ts 
+import { Request, Response } from "express";
+
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { DivisionService } from "./division.service";
+import { IDivision } from "./division.interface";
+
+
+const createDivision = catchAsync(async (req: Request, res: Response) => {
+
+    const payload: IDivision = {
+        ...req.body,
+        thumbnail: req.file?.path
+    }
+
+    const result = await DivisionService.createDivision(payload);
+    sendResponse(res, {
+        statusCode: 201,
+        success: true,
+        message: "Division created",
+        data: result,
+    });
+});
+
+
+export const DivisionController = {
+    createDivision,
+};
+```
+
+- for safety we will add this line in express 
+
+
+```ts 
+app.use(express.urlencoded({ extended: true }))
+```
+
+- app.ts 
+
+```ts
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
+import notFound from "./app/middlewares/notFound"
+import cookieParser from "cookie-parser"
+import passport from "passport"
+import expressSession from "express-session"
+
+import "./app/config/passport" //we have to let the app.ts know that passport.ts file exists 
+import { envVars } from "./app/config/env"
+
+const app = express()
+
+app.use(expressSession({
+    secret: envVars.EXPRESS_SESSION_SECRET,
+    resave: false, // Don’t save the session again if nothing changed.
+    saveUninitialized: false // Don’t create empty sessions for users who haven’t logged in yet.
+}))
+app.use(passport.initialize()) // This sets up Passport in your Express app.
+app.use(passport.session()) // This tells Passport to use sessions to store login info (so the user stays logged in between requests).
+
+app.use(cookieParser()) // cookie parser added
+app.use(express.json())
+app.use(express.urlencoded({ extended: true })) // for multer upload
+//Even though multer handles file uploads (multipart/form-data), the non-file fields (req.body) from a multipart request are not automatically parsed into usable JS objects unless this middleware is added.
+app.use(cors())
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+app.use("/api/v1", router)
+
+// using the global error handler 
+app.use(globalErrorHandler)
+
+// Using not found route 
+app.use(notFound)
+
+
+
+export default app
+```
+
+| Middleware                               | Purpose                                   |
+| ---------------------------------------- | ----------------------------------------- |
+| `multerUpload.single('file')`            | Parses file field → `req.file`            |
+| `express.urlencoded({ extended: true })` | Parses text fields from form → `req.body` |
+| `express.json()`                         | Parses JSON payloads → `req.body`         |
+
+- Even though multer handles file uploads (multipart/form-data), the non-file fields (req.body) from a multipart request are not automatically parsed into usable JS objects unless this middleware is added.
+
+- update in validateRequest.ts 
+
+
+```ts
+
+import { NextFunction, Request, Response } from "express"
+import { AnyZodObject } from "zod"
+
+export const validateRequest = (zodSchema: AnyZodObject) => async (req: Request, res: Response, next: NextFunction) => {
+
+    try {
+        // console.log("Old Body", req.body)
+        req.body = JSON.parse(req.body.data) || req.body // for multer
+        req.body = await zodSchema.parseAsync(req.body)
+        // console.log("New Body", req.body)
+        // here data sanitization is working. 
+        // Its like if we give any unwanted fields inside body it will removed. and set the properly validated data inside body and the controller will work with it. 
+        next()
+    } catch (error) {
+        next(error)
+
+    }
+}
+```
+
+![alt text](image-4.png)
+
+
+## 32-4 Upload Multiple Image For Tour
