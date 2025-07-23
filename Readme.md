@@ -313,4 +313,100 @@ export const validateRequest = (zodSchema: AnyZodObject) => async (req: Request,
 ![alt text](image-4.png)
 
 
-## 32-4 Upload Multiple Image For Tour
+## 32-4 Upload Multiple Image For 
+
+
+- validateRequest.ts update 
+
+```ts 
+
+import { NextFunction, Request, Response } from "express"
+import { AnyZodObject } from "zod"
+
+export const validateRequest = (zodSchema: AnyZodObject) => async (req: Request, res: Response, next: NextFunction) => {
+
+    try {
+        // console.log("Old Body", req.body)
+        // req.body = JSON.parse(req.body.data) || req.body // for multer
+        // more efficient 
+        if (req.body.data) {
+            req.body = JSON.parse(req.body.data)
+        }
+        req.body = await zodSchema.parseAsync(req.body)
+        // console.log("New Body", req.body)
+        // here data sanitization is working. 
+        // Its like if we give any unwanted fields inside body it will removed. and set the properly validated data inside body and the controller will work with it. 
+        next()
+    } catch (error) {
+        next(error)
+
+    }
+}
+```
+- tour.route.ts
+
+```ts 
+import express from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { Role } from "../user/user.interface";
+import { TourController } from "./tour.controller";
+import { createTourTypeZodSchema, createTourZodSchema, updateTourZodSchema } from "./tour.validation";
+import { multerUpload } from "../../config/multer.config";
+
+
+const router = express.Router();
+
+
+
+/* --------------------- TOUR ROUTES ---------------------- */
+router.get("/", TourController.getAllTours);
+
+router.post(
+    "/create",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.array("files"),
+    validateRequest(createTourZodSchema),
+    TourController.createTour
+);
+
+
+router.delete("/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), TourController.deleteTour);
+
+
+
+
+export const TourRoutes = router
+```
+
+- tour.controller.ts 
+
+
+```ts 
+
+import { Request, Response } from 'express';
+import { catchAsync } from '../../utils/catchAsync';
+import { sendResponse } from '../../utils/sendResponse';
+import { TourService } from './tour.service';
+import { ITour } from './tour.interface';
+
+const createTour = catchAsync(async (req: Request, res: Response) => {
+    console.log(req.body, req.files)
+    const payload: ITour = {
+        ...req.body,
+        images: (req.files as Express.Multer.File[]).map(file => file.path)
+    }
+    const result = await TourService.createTour(payload);
+    sendResponse(res, {
+        statusCode: 201,
+        success: true,
+        message: 'Tour created successfully',
+        data: result,
+    });
+});
+
+
+export const TourController = {
+    createTour,
+};
+```
