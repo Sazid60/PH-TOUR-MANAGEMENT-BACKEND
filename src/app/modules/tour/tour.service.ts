@@ -3,6 +3,8 @@ import { tourSearchableFields } from "./tour.constant";
 import { ITour, ITourType } from "./tour.interface";
 import { Tour, TourType } from "./tour.model";
 import { QueryBuilder } from "../../utils/QueryBuilder";
+import { deleteImageFromCloudinary } from "../../config/cloudinary.config";
+
 
 const createTour = async (payload: ITour) => {
     const existingTour = await Tour.findOne({ title: payload.title });
@@ -216,7 +218,46 @@ const updateTour = async (id: string, payload: Partial<ITour>) => {
     //     payload.slug = slug
     // }
 
+    // ✅ If the user has uploaded new images AND there are existing images in the DB,
+    // merge both sets together into payload.images.
+    // This helps to temporarily keep both new and old images in the payload.
+
+    if (payload.images && payload.images.length > 0 && existingTour.images && existingTour.images.length > 0) {
+        payload.images = [...payload.images, ...existingTour.images]
+        // 📝 This is combining newly added images with existing ones,
+        // so we can later filter out deleted ones and finalize the image list.
+    }
+
+    // ✅ Now handle deleted images:
+    // deletedImages array will be coming from frontend on the go. i mean if any existing image that user deleted will be stored in deletedImages array in frontend and will be coming inside payload 
+
+    if (payload.deleteImages && payload.deleteImages.length > 0 && existingTour.images && existingTour.images.length > 0) {
+        // 🧹 Step 1: Filter out the images that were marked for deletion from the DB list
+        const restDBImages = existingTour.images.filter(imageUrl => !payload.deleteImages?.includes(imageUrl))
+
+        // 📝 This gives us the images that still exist in the tour after deletion.
+
+        // this is storing the images that is not existing is delete array 
+        // there is a problem like user might delete images and add images at the same time. we have to grab the images that are newly added as well 
+
+        // ➕ Step 2: Identify new images added by user
+        const updatedPayloadImages = (payload.images || [])
+            // Remove any that are marked for deletion (just in case)
+            .filter(imageUrl => !payload.deleteImages?.includes(imageUrl))
+            // Exclude existing non-deleted DB images to avoid duplication
+            .filter(imageUrl => !restDBImages.includes(imageUrl))
+
+
+        // Step 3: Merge the remaining DB images with the new images
+        payload.images = [...restDBImages, ...updatedPayloadImages]
+    }
+
+
     const updatedTour = await Tour.findByIdAndUpdate(id, payload, { new: true });
+
+    if (payload.deleteImages && payload.deleteImages.length > 0 && existingTour.images && existingTour.images.length > 0) {
+        await Promise.all(payload.deleteImages.map(url => deleteImageFromCloudinary(url)))
+    }
 
     return updatedTour;
 };

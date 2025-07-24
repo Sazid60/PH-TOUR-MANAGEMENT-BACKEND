@@ -313,4 +313,964 @@ export const validateRequest = (zodSchema: AnyZodObject) => async (req: Request,
 ![alt text](image-4.png)
 
 
-## 32-4 Upload Multiple Image For Tour
+## 32-4 Upload Multiple Image For 
+
+
+- validateRequest.ts update 
+
+```ts 
+
+import { NextFunction, Request, Response } from "express"
+import { AnyZodObject } from "zod"
+
+export const validateRequest = (zodSchema: AnyZodObject) => async (req: Request, res: Response, next: NextFunction) => {
+
+    try {
+        // console.log("Old Body", req.body)
+        // req.body = JSON.parse(req.body.data) || req.body // for multer
+        // more efficient 
+        if (req.body.data) {
+            req.body = JSON.parse(req.body.data)
+        }
+        req.body = await zodSchema.parseAsync(req.body)
+        // console.log("New Body", req.body)
+        // here data sanitization is working. 
+        // Its like if we give any unwanted fields inside body it will removed. and set the properly validated data inside body and the controller will work with it. 
+        next()
+    } catch (error) {
+        next(error)
+
+    }
+}
+```
+- tour.route.ts
+
+```ts 
+import express from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { Role } from "../user/user.interface";
+import { TourController } from "./tour.controller";
+import { createTourTypeZodSchema, createTourZodSchema, updateTourZodSchema } from "./tour.validation";
+import { multerUpload } from "../../config/multer.config";
+
+
+const router = express.Router();
+
+
+
+/* --------------------- TOUR ROUTES ---------------------- */
+router.get("/", TourController.getAllTours);
+
+router.post(
+    "/create",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.array("files"),
+    validateRequest(createTourZodSchema),
+    TourController.createTour
+);
+
+
+router.delete("/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), TourController.deleteTour);
+
+
+
+
+export const TourRoutes = router
+```
+
+- tour.controller.ts 
+
+
+```ts 
+
+import { Request, Response } from 'express';
+import { catchAsync } from '../../utils/catchAsync';
+import { sendResponse } from '../../utils/sendResponse';
+import { TourService } from './tour.service';
+import { ITour } from './tour.interface';
+
+const createTour = catchAsync(async (req: Request, res: Response) => {
+    console.log(req.body, req.files)
+    const payload: ITour = {
+        ...req.body,
+        images: (req.files as Express.Multer.File[]).map(file => file.path)
+    }
+    const result = await TourService.createTour(payload);
+    sendResponse(res, {
+        statusCode: 201,
+        success: true,
+        message: 'Tour created successfully',
+        data: result,
+    });
+});
+
+
+export const TourController = {
+    createTour,
+};
+```
+
+## 32-5 Delete Image from Cloudinary if API throws error.
+- as its not a mongoose operation we can not use transaction rollback. But we have to prevent uploading image to cloudinary if any error happens or you can say we have to delete the uploaded images if any error happens 
+- If any error happens while creating the tour we will get the error in the global error handler. From the global error handler we will delete the uploaded image in cloudinary if any error happens. 
+- lets build the delete function inside cloudinary.config.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { v2 as cloudinary } from 'cloudinary';
+import { envVars } from './env';
+import AppError from '../errorHelpers/AppError';
+
+
+cloudinary.config({
+    cloud_name: envVars.CLOUDINARY.CLOUDINARY_CLOUD_NAME,
+    api_key: envVars.CLOUDINARY.CLOUDINARY_API_KEY,
+    api_secret: envVars.CLOUDINARY.CLOUDINARY_API_SECRET
+})
+
+// cloudinary.v2.uploader.upload(file, options).then(callback);
+// this is the system of cloudinary but we will do it using a package.
+// this package will take the file and will do the work and will return the url inside the req.file object 
+
+export const deleteImageFromCloudinary = async (url: string) => {
+    try {
+        const regex = /\/v\d+\/(.*?)\.(jpg|jpeg|png|gif|webp)$/i;
+        const match = url.match(regex);
+
+        console.log({ match })
+        if (match && match[1]) {
+            const public_id = match[1];
+            await cloudinary.uploader.destroy(public_id)
+            console.log(`File ${public_id} is deleted from cloudinary`);
+        }
+    } catch (error: any) {
+        throw new AppError(401, "Cloudinary image deletion failed", error.message)
+    }
+}
+export const cloudinaryUpload = cloudinary
+```
+- update in globalErrorHandler.ts 
+
+```ts 
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express";
+import { envVars } from "../config/env";
+import AppError from "../errorHelpers/AppError";
+import { TErrorSources } from "../interfaces/error.types";
+import { handleDuplicateError } from "../helpers/handleDuplicateError";
+import { handleCastError } from "../helpers/handleCastError";
+import { handleZodError } from "../helpers/handleZodError";
+import { handleValidationError } from "../helpers/handleValidationError";
+import { deleteImageFromCloudinary } from "../config/cloudinary.config";
+
+export const globalErrorHandler = async (err: any, req: Request, res: Response, next: NextFunction) => {
+    if (envVars.NODE_ENV === "development") {
+        console.log(err);
+    }
+
+    // for cloudinary 
+    if (req.file) {
+        await deleteImageFromCloudinary(req.file.path)
+    }
+
+    if (req.files && Array.isArray(req.files) && req.files.length) {
+        const imageUrls = (req.files as Express.Multer.File[]).map(file => file.path)
+        await Promise.all(imageUrls.map(url => deleteImageFromCloudinary(url)))
+    }
+
+
+    // ____________
+
+    let errorSources: TErrorSources[] = []
+    let statusCode = 500
+    let message = "Something Went Wrong!!"
+
+    //Duplicate error
+    if (err.code === 11000) {
+        const simplifiedError = handleDuplicateError(err)
+        statusCode = simplifiedError.statusCode;
+        message = simplifiedError.message
+    }
+    // Object ID error / Cast Error
+    else if (err.name === "CastError") {
+        const simplifiedError = handleCastError(err)
+        statusCode = simplifiedError.statusCode;
+        message = simplifiedError.message
+    }
+    else if (err.name === "ZodError") {
+        const simplifiedError = handleZodError(err)
+        statusCode = simplifiedError.statusCode
+        message = simplifiedError.message
+        errorSources = simplifiedError.errorSources as TErrorSources[]
+    }
+    //Mongoose Validation Error
+    else if (err.name === "ValidationError") {
+        const simplifiedError = handleValidationError(err)
+        statusCode = simplifiedError.statusCode;
+        errorSources = simplifiedError.errorSources as TErrorSources[]
+        message = simplifiedError.message
+    }
+    else if (err instanceof AppError) {
+        statusCode = err.statusCode;
+        message = err.message
+    } else if (err instanceof Error) {
+        statusCode = 500;
+        message = err?.message
+    }
+
+    res.status(statusCode).json({
+        success: false,
+        message,
+        errorSources,
+        err: envVars.NODE_ENV === "development" ? err : null,
+        stack: envVars.NODE_ENV === "development" ? err.stack : null
+    })
+
+}
+```
+
+## 32-6 Upload image during updating Tour and Division
+- for update we can think like that a image is updated and then update operation is done after that we will delete the replaced image from the cloudinary. 
+
+- division.route.ts 
+
+```ts 
+import { Router } from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { Role } from "../user/user.interface";
+import { createDivisionSchema, updateDivisionSchema } from "./division.validation";
+import { DivisionController } from "./division.controller";
+import { multerUpload } from "../../config/multer.config";
+
+
+
+const router = Router()
+
+
+router.post(
+    "/create",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.single("file"),
+    validateRequest(createDivisionSchema),
+    DivisionController.createDivision
+);
+
+router.patch(
+    "/:id",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.single("file"),
+    validateRequest(updateDivisionSchema),
+    DivisionController.updateDivision
+);
+router.delete("/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), DivisionController.deleteDivision);
+
+export const DivisionRoutes = router
+```
+- division.controller.ts 
+
+```ts 
+import { Request, Response } from "express";
+
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { DivisionService } from "./division.service";
+import { IDivision } from "./division.interface";
+
+
+const createDivision = catchAsync(async (req: Request, res: Response) => {
+
+    const payload: IDivision = {
+        ...req.body,
+        thumbnail: req.file?.path
+    }
+    const result = await DivisionService.createDivision(payload);
+    sendResponse(res, {
+        statusCode: 201,
+        success: true,
+        message: "Division created",
+        data: result,
+    });
+});
+
+
+const updateDivision = catchAsync(async (req: Request, res: Response) => {
+    const id = req.params.id;
+
+    const payload: IDivision = {
+        ...req.body,
+        thumbnail: req.file?.path
+    }
+
+    const result = await DivisionService.updateDivision(id, payload);
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Division updated",
+        data: result,
+    });
+});
+
+
+
+export const DivisionController = {
+    createDivision,
+    updateDivision,
+
+};
+```
+- division.service.ts 
+
+
+ ```ts 
+import { deleteImageFromCloudinary } from "../../config/cloudinary.config";
+import { IDivision } from "./division.interface";
+import { Division } from "./division.model";
+
+const createDivision = async (payload: IDivision) => {
+
+    const existingDivision = await Division.findOne({ name: payload.name });
+    if (existingDivision) {
+        throw new Error("A division with this name already exists.");
+    }
+
+
+    const division = await Division.create(payload);
+
+    return division
+};
+
+
+const updateDivision = async (id: string, payload: Partial<IDivision>) => {
+
+    const existingDivision = await Division.findById(id);
+    if (!existingDivision) {
+        throw new Error("Division not found.");
+    }
+
+    const duplicateDivision = await Division.findOne({
+        name: payload.name,
+        _id: { $ne: id },
+    });
+
+    if (duplicateDivision) {
+        throw new Error("A division with this name already exists.");
+    }
+
+    const updatedDivision = await Division.findByIdAndUpdate(id, payload, { new: true, runValidators: true })
+
+    if (payload.thumbnail && existingDivision.thumbnail) {
+        await deleteImageFromCloudinary(existingDivision.thumbnail)
+    }
+
+    return updatedDivision
+
+};
+
+
+
+export const DivisionService = {
+    createDivision,
+    updateDivision,
+
+};
+ ```
+- remember for update we have to do the delete after successful update in service 
+- for multiple file delete we have to do in different way 
+
+- tour.route.ts
+
+```ts 
+
+import express from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { Role } from "../user/user.interface";
+import { TourController } from "./tour.controller";
+import { createTourTypeZodSchema, createTourZodSchema, updateTourZodSchema } from "./tour.validation";
+import { multerUpload } from "../../config/multer.config";
+
+
+const router = express.Router();
+
+
+router.post(
+    "/create",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.array("files"),
+    validateRequest(createTourZodSchema),
+    TourController.createTour
+);
+
+
+
+router.patch(
+    "/:id",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.array("files"),
+    validateRequest(updateTourZodSchema),
+    TourController.updateTour
+);
+
+
+
+export const TourRoutes = router
+```
+
+- tour.controller.ts 
+
+
+```ts 
+
+
+import { Request, Response } from 'express';
+import { catchAsync } from '../../utils/catchAsync';
+import { sendResponse } from '../../utils/sendResponse';
+import { TourService } from './tour.service';
+import { ITour } from './tour.interface';
+
+const createTour = catchAsync(async (req: Request, res: Response) => {
+    // console.log(req.body, req.files)
+    const payload: ITour = {
+        ...req.body,
+        images: (req.files as Express.Multer.File[]).map(file => file.path)
+    }
+
+    const result = await TourService.createTour(payload);
+    sendResponse(res, {
+        statusCode: 201,
+        success: true,
+        message: 'Tour created successfully',
+        data: result,
+    });
+});
+
+
+const updateTour = catchAsync(async (req: Request, res: Response) => {
+
+
+    const payload: ITour = {
+        ...req.body,
+        images: (req.files as Express.Multer.File[]).map(file => file.path)
+    }
+
+
+    const result = await TourService.updateTour(req.params.id, payload);
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: 'Tour updated successfully',
+        data: result,
+    });
+});
+
+
+export const TourController = {
+    createTour,
+    updateTour,
+};
+```
+- update in tour.interface.ts 
+
+
+```ts 
+deleteImages?: string[]
+```
+
+- update in tour.validation.ts 
+
+
+```ts
+deleteImages: z.array(z.string()).optional() // add in update
+```
+
+- tour.service.ts 
+
+```ts 
+
+import { tourSearchableFields } from "./tour.constant";
+import { ITour, ITourType } from "./tour.interface";
+import { Tour, TourType } from "./tour.model";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { deleteImageFromCloudinary } from "../../config/cloudinary.config";
+
+
+const createTour = async (payload: ITour) => {
+    const existingTour = await Tour.findOne({ title: payload.title });
+    if (existingTour) {
+        throw new Error("A tour with this title already exists.");
+    }
+
+    const tour = await Tour.create(payload)
+
+    return tour;
+};
+
+const updateTour = async (id: string, payload: Partial<ITour>) => {
+
+    const existingTour = await Tour.findById(id);
+
+    if (!existingTour) {
+        throw new Error("Tour not found.");
+    }
+
+    // ✅ If the user has uploaded new images AND there are existing images in the DB,
+    // merge both sets together into payload.images.
+    // This helps to temporarily keep both new and old images in the payload.
+
+    if (payload.images && payload.images.length > 0 && existingTour.images && existingTour.images.length > 0) {
+        payload.images = [...payload.images, ...existingTour.images]
+        // 📝 This is combining newly added images with existing ones,
+        // so we can later filter out deleted ones and finalize the image list.
+    }
+
+    // ✅ Now handle deleted images:
+    // deletedImages array will be coming from frontend on the go. i mean if any existing image that user deleted will be stored in deletedImages array in frontend and will be coming inside payload 
+
+    if (payload.deleteImages && payload.deleteImages.length > 0 && existingTour.images && existingTour.images.length > 0) {
+        // 🧹 Step 1: Filter out the images that were marked for deletion from the DB list
+        const restDBImages = existingTour.images.filter(imageUrl => !payload.deleteImages?.includes(imageUrl))
+
+        // 📝 This gives us the images that still exist in the tour after deletion.
+
+        // this is storing the images that is not existing is delete array 
+        // there is a problem like user might delete images and add images at the same time. we have to grab the images that are newly added as well 
+
+        // ➕ Step 2: Identify new images added by user
+        const updatedPayloadImages = (payload.images || [])
+            // Remove any that are marked for deletion (just in case)
+            .filter(imageUrl => !payload.deleteImages?.includes(imageUrl))
+            // Exclude existing non-deleted DB images to avoid duplication
+            .filter(imageUrl => !restDBImages.includes(imageUrl))
+
+
+        // Step 3: Merge the remaining DB images with the new images
+        payload.images = [...restDBImages, ...updatedPayloadImages]
+    }
+
+// deletes from cloudinary
+    const updatedTour = await Tour.findByIdAndUpdate(id, payload, { new: true });
+
+    if (payload.deleteImages && payload.deleteImages.length > 0 && existingTour.images && existingTour.images.length > 0) {
+        await Promise.all(payload.deleteImages.map(url => deleteImageFromCloudinary(url)))
+    }
+
+    return updatedTour;
+};
+
+export const TourService = {
+    createTour,
+    updateTour,
+
+};
+
+```
+
+
+## 32-7 Create Set Password API and Refactor Reset Password Api to Change Password API
+- Those who have been google authenticated and has no password and they want to set password. we will give them a api to set password. 
+- Forget password route will have connection with reset password route 
+
+#### Setting password for google logged in user 
+- auth.route.ts 
+
+```ts 
+
+import { NextFunction, Request, Response, Router } from "express";
+import { AuthControllers } from "./auth.controller";
+import { checkAuth } from '../../middlewares/checkAuth';
+import { Role } from "../user/user.interface";
+import passport from "passport";
+
+const router = Router()
+
+router.post("/login", AuthControllers.credentialsLogin)
+router.post("/refresh-token", AuthControllers.getNewAccessToken)
+router.post("/logout", AuthControllers.logout)
+router.post("/change-password", checkAuth(...Object.values(Role)), AuthControllers.changePassword)
+router.post("/reset-password", checkAuth(...Object.values(Role)), AuthControllers.resetPassword)
+router.post("/set-password", checkAuth(...Object.values(Role)), AuthControllers.setPassword)
+
+//  /booking -> /login -> successful google login -> /booking frontend
+// /login -> successful google login -> / frontend
+router.get("/google", async (req: Request, res: Response, next: NextFunction) => {
+    const redirect = req.query.redirect || "/"
+    passport.authenticate("google", { scope: ["profile", "email"], state: redirect as string })(req, res, next)
+})
+// this kept get because the authentication is done by google and we have nothing to send in body 
+
+// api/v1/auth/google/callback?state=/booking this redirect state will be added in the url by the previous auth login route
+router.get("/google/callback", passport.authenticate("google", { failureRedirect: "/login" }), AuthControllers.googleCallbackController)
+
+// this is for setting the cookies 
+
+
+
+export const authRoutes = router
+```
+- auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+import { setAuthCookie } from "../../utils/setCookie";
+import bcrypt from 'bcryptjs';
+import { JwtPayload } from "jsonwebtoken";
+import { createUserToken } from "../../utils/userToken";
+import { envVars } from "../../config/env";
+import passport from "passport";
+
+
+
+const setPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+
+    const decodedToken = req.user as JwtPayload
+    const { password } = req.body
+
+    await AuthServices.setPassword(decodedToken.userId, password)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "password reset Successfully",
+        data: null
+    })
+
+})
+
+
+
+export const AuthControllers = {
+
+    setPassword
+}
+
+```
+
+- auth.service.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import AppError from '../../errorHelpers/AppError';
+import { IAuthProvider, IsActive, IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken, verifyToken } from "../../utils/jwt";
+import { envVars } from '../../config/env';
+import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
+import { JwtPayload } from "jsonwebtoken";
+
+
+
+const setPassword = async (userId: string, plainPassword: string) => {
+    const user = await User.findById(userId);
+
+    if (!user) {
+        throw new AppError(404, "User Not Found")
+        // though it will not be used because it will be checked by checkAuth(). still kept for safety 
+    }
+
+    if (user.password && user.auths.some(providerObject => providerObject.provider === "google")) {
+        throw new AppError(httpStatus.BAD_REQUEST, "You have already set you password. Now you can change the password from your profile password update")
+    }
+
+    // .some() checks if at least one item in the array satisfies the given condition.
+    // "Is there any object in the auths array where the provider is "google"?"
+
+    const hashedPassword = await bcrypt.hash(
+        plainPassword,
+        Number(envVars.BCRYPT_SALT_ROUND)
+    )
+
+    const credentialProvider: IAuthProvider = {
+        provider: "credentials",
+        providerId: user.email
+    }
+
+    const auths: IAuthProvider[] = [...user.auths, credentialProvider]
+
+    user.password = hashedPassword
+
+    user.auths = auths
+
+    await user.save()
+
+}
+export const AuthServices = {
+    setPassword
+}
+```
+
+## 32-8 User status check during login, Create API to Get My Profile
+#### get my profile functionality 
+- user.route.ts 
+
+```ts 
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema, updateUserZodSchema } from "./user.validation";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "./user.interface";
+
+
+
+const router = Router()
+
+router.get("/me", checkAuth(...Object.values(Role)), userControllers.getMe)
+
+
+export const UserRoutes = router
+```
+- user.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+
+import { sendResponse } from "../../utils/sendResponse";
+import { verifyToken } from '../../utils/jwt';
+import { envVars } from "../../config/env";
+import { JwtPayload } from "jsonwebtoken";
+import { catchAsync } from "../../utils/catchAsync";
+
+
+const getMe = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const decodedToken = req.user as JwtPayload
+    const result = await userServices.getMe(decodedToken.userId);
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "Your profile Retrieved Successfully",
+        data: result.data
+    })
+})
+export const userControllers = {
+
+    getMe,
+
+}
+```
+
+- user.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError";
+import { IAuthProvider, IUser, Role } from "./user.interface";
+import { User } from "./user.model";
+import httpStatus from 'http-status-codes';
+import bcrypt from "bcryptjs";
+import { JwtPayload } from "jsonwebtoken";
+import { envVars } from "../../config/env";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { userSearchableFields } from "./user.constant";
+
+
+const getMe = async (userId: string) => {
+    const user = await User.findById(userId).select("-password");
+    return {
+        data: user
+    }
+};
+
+export const userServices = {
+
+    getMe
+}
+```
+
+#### Now we have a flaw in our system like we are checking user status in checkAuth() i mean we are checking after login. but we should not allow to login if status is not right. 
+
+- passport.ts 
+
+```ts 
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Strategy as GoogleStrategy, Profile, VerifyCallback } from "passport-google-oauth20";
+import { envVars } from "./env";
+import { User } from "../modules/user/user.model";
+import { IsActive, Role } from "../modules/user/user.interface";
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import bcrypt from 'bcryptjs';
+
+
+
+passport.use(
+    new LocalStrategy(
+        {
+            usernameField: "email",
+            passwordField: "password"
+            // these will be passed to the verify function 
+        },
+        //  we do not need to give the done type for local as it automatically infers 
+        async (email: string, password: string, done) => {
+            // there will be the business logics that will hold the functionalities that we have done in credentialsLogin
+            try {
+                const isUserExist = await User.findOne({ email })
+
+                // we are just handling login here and register will be done separately. 
+                // It will not create user automatically if user do not exists like google login because we have no data of user at this point except email and password. 
+                if (!isUserExist) {
+                    // return done(null, false, { message: "User Not Found" })
+                    return done("User Not Found")
+                }
+
+                if (!isUserExist.isVerified) {
+                    return done(`User Is Not Verified`)
+                }
+
+
+                if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+                    return done(`User Is ${isUserExist.isActive}`)
+                }
+                if (isUserExist.isDeleted) {
+                    return done(`User Is Deleted`)
+                }
+
+                // Returns true if any item in array matches the condition
+                // .some() is specifically designed for checking if at least one item in an array matches a condition — and it can short-circuit
+                const isGoogleAuthenticated = isUserExist.auths.some(providerObjects => providerObjects.provider == "google")
+
+                if (isGoogleAuthenticated && !isUserExist.password) {
+                    return done(null, false, { message: "You have authenticated through Google. So if you want to login with credentials, then at first login with google and set a password for your Gmail and then you can login with email and password." })
+                }
+
+                const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+                if (!isPasswordMatch) {
+                    return done(null, false, { message: "Password Does Not Match" })
+                }
+
+                return done(null, isUserExist)
+
+                // here is a catch that google login user do not have password. we do not have password for login in here.
+                // we have to manage this issue by adding password field 
+                // we will send a message that if you logged in using google please set the password or just login using google again 
+
+            } catch (error) {
+                console.log(error)
+                return done(error) // this is acting like next(error)
+            }
+        }
+    )
+)
+
+passport.use(
+    new GoogleStrategy(
+        {
+            // options
+            clientID: envVars.GOOGLE_CLIENT_ID,
+            clientSecret: envVars.GOOGLE_CLIENT_SECRET,
+            callbackURL: envVars.GOOGLE_CALLBACK_URL
+        }, async (accessToken: string, refreshToken: string, profile: Profile, done: VerifyCallback) => {
+            // verify
+            try {
+
+                const email = profile.emails?.[0].value
+
+                // we are checking if the user is exist in cloud 
+                if (!email) {
+                    return done(null, false, { message: "No Email Found !" }) //its like throw new app error and passport has its own 
+                }
+
+                let isUserExist = await User.findOne({ email })
+                if (isUserExist && !isUserExist.isVerified) {
+                    // throw new AppError(httpStatus.BAD_REQUEST, "User is not verified")
+                    // done("User is not verified")
+                    return done(null, false, { message: "User is not verified" })
+                }
+
+                if (isUserExist && (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE)) {
+                    // throw new AppError(httpStatus.BAD_REQUEST, `User is ${isUserExist.isActive}`)
+                    done(`User is ${isUserExist.isActive}`)
+                }
+
+                if (isUserExist && isUserExist.isDeleted) {
+                    return done(null, false, { message: "User is deleted" })
+                    // done("User is deleted")
+                }
+
+                if (!isUserExist) {
+                    isUserExist = await User.create(
+                        {
+                            email,
+                            name: profile.displayName,
+                            picture: profile.photos?.[0].value,
+                            role: Role.USER,
+                            isVerified: true,
+                            auths: [
+                                {
+                                    provider: "google",
+                                    providerId: profile.id
+                                }
+                            ]
+                        }
+                    )
+                }
+
+                return done(null, isUserExist) // will set the user to req.user
+
+            } catch (error) {
+                console.log("Google Strategy Error", error)
+
+                return done(error)
+            }
+        }
+    ))
+
+
+
+// frontend localhost:5173/login?redirect=/booking -> localhost:5000/api/v1/auth/google?redirect=/booking -> passport -> Google OAuth Consent -> gmail login -> successful -> after successful login will send to callback url localhost:5000/api/v1/auth/google/callback -> db store -> token
+
+// Bridge == Google -> user db store -> token
+//Custom -> email , password, role : USER, name... -> registration -> DB -> 1 User create
+//Google -> req -> google -> successful : Jwt Token : Role , email -> DB - Store -> token - api access
+
+// serialize the passport 
+
+// Serializes the user (stores minimal info like user ID in the session)
+
+passport.serializeUser((user: any, done: (err: any, id?: unknown) => void) => {
+    done(null, user._id)
+})
+
+//Deserializes the user (retrieves the full user object from the DB based on that ID for each request)
+
+passport.deserializeUser(async (id: string, done: any) => {
+    try {
+        const user = await User.findById(id);
+        done(null, user)
+    } catch (error) {
+        console.log(error);
+        done(error)
+    }
+})
+```
+- Update in auth.route.ts for redirecting user if any validation fails in passport.ts 
+
+
+```ts 
+router.get("/google/callback", passport.authenticate("google", { failureRedirect: `${envVars.FRONTEND_URL}/login?error=There is some issues with your account. Please contact with out support team!` }), AuthControllers.googleCallbackController)
+
+```

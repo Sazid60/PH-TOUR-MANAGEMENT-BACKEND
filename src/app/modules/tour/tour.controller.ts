@@ -3,9 +3,16 @@ import { Request, Response } from 'express';
 import { catchAsync } from '../../utils/catchAsync';
 import { sendResponse } from '../../utils/sendResponse';
 import { TourService } from './tour.service';
+import { ITour } from './tour.interface';
 
 const createTour = catchAsync(async (req: Request, res: Response) => {
-    const result = await TourService.createTour(req.body);
+    // console.log(req.body, req.files)
+    const payload: ITour = {
+        ...req.body,
+        images: (req.files as Express.Multer.File[]).map(file => file.path)
+    }
+
+    const result = await TourService.createTour(payload);
     sendResponse(res, {
         statusCode: 201,
         success: true,
@@ -39,7 +46,14 @@ const getSingleTour = catchAsync(async (req: Request, res: Response) => {
 
 const updateTour = catchAsync(async (req: Request, res: Response) => {
 
-    const result = await TourService.updateTour(req.params.id, req.body);
+
+    const payload: ITour = {
+        ...req.body,
+        images: (req.files as Express.Multer.File[]).map(file => file.path)
+    }
+
+
+    const result = await TourService.updateTour(req.params.id, payload);
     sendResponse(res, {
         statusCode: 200,
         success: true,
