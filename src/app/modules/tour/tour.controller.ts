@@ -11,6 +11,7 @@ const createTour = catchAsync(async (req: Request, res: Response) => {
         ...req.body,
         images: (req.files as Express.Multer.File[]).map(file => file.path)
     }
+
     const result = await TourService.createTour(payload);
     sendResponse(res, {
         statusCode: 201,

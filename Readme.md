@@ -410,3 +410,124 @@ export const TourController = {
     createTour,
 };
 ```
+
+## 32-5 Delete Image from Cloudinary if API throws error.
+- as its not a mongoose operation we can not use transaction rollback. But we have to prevent uploading image to cloudinary if any error happens or you can say we have to delete the uploaded images if any error happens 
+- If any error happens while creating the tour we will get the error in the global error handler. From the global error handler we will delete the uploaded image in cloudinary if any error happens. 
+- lets build the delete function inside cloudinary.config.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { v2 as cloudinary } from 'cloudinary';
+import { envVars } from './env';
+import AppError from '../errorHelpers/AppError';
+
+
+cloudinary.config({
+    cloud_name: envVars.CLOUDINARY.CLOUDINARY_CLOUD_NAME,
+    api_key: envVars.CLOUDINARY.CLOUDINARY_API_KEY,
+    api_secret: envVars.CLOUDINARY.CLOUDINARY_API_SECRET
+})
+
+// cloudinary.v2.uploader.upload(file, options).then(callback);
+// this is the system of cloudinary but we will do it using a package.
+// this package will take the file and will do the work and will return the url inside the req.file object 
+
+export const deleteImageFromCloudinary = async (url: string) => {
+    try {
+        const regex = /\/v\d+\/(.*?)\.(jpg|jpeg|png|gif|webp)$/i;
+        const match = url.match(regex);
+
+        console.log({ match })
+        if (match && match[1]) {
+            const public_id = match[1];
+            await cloudinary.uploader.destroy(public_id)
+            console.log(`File ${public_id} is deleted from cloudinary`);
+        }
+    } catch (error: any) {
+        throw new AppError(401, "Cloudinary image deletion failed", error.message)
+    }
+}
+export const cloudinaryUpload = cloudinary
+```
+- update in globalErrorHandler.ts 
+
+```ts 
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express";
+import { envVars } from "../config/env";
+import AppError from "../errorHelpers/AppError";
+import { TErrorSources } from "../interfaces/error.types";
+import { handleDuplicateError } from "../helpers/handleDuplicateError";
+import { handleCastError } from "../helpers/handleCastError";
+import { handleZodError } from "../helpers/handleZodError";
+import { handleValidationError } from "../helpers/handleValidationError";
+import { deleteImageFromCloudinary } from "../config/cloudinary.config";
+
+export const globalErrorHandler = async (err: any, req: Request, res: Response, next: NextFunction) => {
+    if (envVars.NODE_ENV === "development") {
+        console.log(err);
+    }
+
+    // for cloudinary 
+    if (req.file) {
+        await deleteImageFromCloudinary(req.file.path)
+    }
+
+    if (req.files && Array.isArray(req.files) && req.files.length) {
+        const imageUrls = (req.files as Express.Multer.File[]).map(file => file.path)
+        await Promise.all(imageUrls.map(url => deleteImageFromCloudinary(url)))
+    }
+
+
+    // ____________
+
+    let errorSources: TErrorSources[] = []
+    let statusCode = 500
+    let message = "Something Went Wrong!!"
+
+    //Duplicate error
+    if (err.code === 11000) {
+        const simplifiedError = handleDuplicateError(err)
+        statusCode = simplifiedError.statusCode;
+        message = simplifiedError.message
+    }
+    // Object ID error / Cast Error
+    else if (err.name === "CastError") {
+        const simplifiedError = handleCastError(err)
+        statusCode = simplifiedError.statusCode;
+        message = simplifiedError.message
+    }
+    else if (err.name === "ZodError") {
+        const simplifiedError = handleZodError(err)
+        statusCode = simplifiedError.statusCode
+        message = simplifiedError.message
+        errorSources = simplifiedError.errorSources as TErrorSources[]
+    }
+    //Mongoose Validation Error
+    else if (err.name === "ValidationError") {
+        const simplifiedError = handleValidationError(err)
+        statusCode = simplifiedError.statusCode;
+        errorSources = simplifiedError.errorSources as TErrorSources[]
+        message = simplifiedError.message
+    }
+    else if (err instanceof AppError) {
+        statusCode = err.statusCode;
+        message = err.message
+    } else if (err instanceof Error) {
+        statusCode = 500;
+        message = err?.message
+    }
+
+    res.status(statusCode).json({
+        success: false,
+        message,
+        errorSources,
+        err: envVars.NODE_ENV === "development" ? err : null,
+        stack: envVars.NODE_ENV === "development" ? err.stack : null
+    })
+
+}
+```
