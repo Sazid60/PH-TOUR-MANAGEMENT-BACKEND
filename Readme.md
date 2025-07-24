@@ -562,7 +562,7 @@ router.post(
 router.patch(
     "/:id",
     checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
-    multerUpload.array("files"),
+    multerUpload.single("file"),
     validateRequest(updateDivisionSchema),
     DivisionController.updateDivision
 );
@@ -867,4 +867,149 @@ export const TourService = {
 
 };
 
+```
+
+
+## 32-7 Create Set Password API and Refactor Reset Password Api to Change Password API
+- Those who have been google authenticated and has no password and they want to set password. we will give them a api to set password. 
+- Forget password route will have connection with reset password route 
+
+#### Setting password for google logged in user 
+- auth.route.ts 
+
+```ts 
+
+import { NextFunction, Request, Response, Router } from "express";
+import { AuthControllers } from "./auth.controller";
+import { checkAuth } from '../../middlewares/checkAuth';
+import { Role } from "../user/user.interface";
+import passport from "passport";
+
+const router = Router()
+
+router.post("/login", AuthControllers.credentialsLogin)
+router.post("/refresh-token", AuthControllers.getNewAccessToken)
+router.post("/logout", AuthControllers.logout)
+router.post("/change-password", checkAuth(...Object.values(Role)), AuthControllers.changePassword)
+router.post("/reset-password", checkAuth(...Object.values(Role)), AuthControllers.resetPassword)
+router.post("/set-password", checkAuth(...Object.values(Role)), AuthControllers.setPassword)
+
+//  /booking -> /login -> successful google login -> /booking frontend
+// /login -> successful google login -> / frontend
+router.get("/google", async (req: Request, res: Response, next: NextFunction) => {
+    const redirect = req.query.redirect || "/"
+    passport.authenticate("google", { scope: ["profile", "email"], state: redirect as string })(req, res, next)
+})
+// this kept get because the authentication is done by google and we have nothing to send in body 
+
+// api/v1/auth/google/callback?state=/booking this redirect state will be added in the url by the previous auth login route
+router.get("/google/callback", passport.authenticate("google", { failureRedirect: "/login" }), AuthControllers.googleCallbackController)
+
+// this is for setting the cookies 
+
+
+
+export const authRoutes = router
+```
+- auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+import { setAuthCookie } from "../../utils/setCookie";
+import bcrypt from 'bcryptjs';
+import { JwtPayload } from "jsonwebtoken";
+import { createUserToken } from "../../utils/userToken";
+import { envVars } from "../../config/env";
+import passport from "passport";
+
+
+
+const setPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+
+    const decodedToken = req.user as JwtPayload
+    const { password } = req.body
+
+    await AuthServices.setPassword(decodedToken.userId, password)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "password reset Successfully",
+        data: null
+    })
+
+})
+
+
+
+export const AuthControllers = {
+
+    setPassword
+}
+
+```
+
+- auth.service.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import AppError from '../../errorHelpers/AppError';
+import { IAuthProvider, IsActive, IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken, verifyToken } from "../../utils/jwt";
+import { envVars } from '../../config/env';
+import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
+import { JwtPayload } from "jsonwebtoken";
+
+
+
+const setPassword = async (userId: string, plainPassword: string) => {
+    const user = await User.findById(userId);
+
+    if (!user) {
+        throw new AppError(404, "User Not Found")
+        // though it will not be used because it will be checked by checkAuth(). still kept for safety 
+    }
+
+    if (user.password && user.auths.some(providerObject => providerObject.provider === "google")) {
+        throw new AppError(httpStatus.BAD_REQUEST, "You have already set you password. Now you can change the password from your profile password update")
+    }
+
+    // .some() checks if at least one item in the array satisfies the given condition.
+    // "Is there any object in the auths array where the provider is "google"?"
+
+    const hashedPassword = await bcrypt.hash(
+        plainPassword,
+        Number(envVars.BCRYPT_SALT_ROUND)
+    )
+
+    const credentialProvider: IAuthProvider = {
+        provider: "credentials",
+        providerId: user.email
+    }
+
+    const auths: IAuthProvider[] = [...user.auths, credentialProvider]
+
+    user.password = hashedPassword
+
+    user.auths = auths
+
+    await user.save()
+
+}
+export const AuthServices = {
+    setPassword
+}
 ```
