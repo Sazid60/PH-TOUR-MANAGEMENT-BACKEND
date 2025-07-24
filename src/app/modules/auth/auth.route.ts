@@ -4,6 +4,7 @@ import { AuthControllers } from "./auth.controller";
 import { checkAuth } from '../../middlewares/checkAuth';
 import { Role } from "../user/user.interface";
 import passport from "passport";
+import { envVars } from "../../config/env";
 
 const router = Router()
 
@@ -23,7 +24,7 @@ router.get("/google", async (req: Request, res: Response, next: NextFunction) =>
 // this kept get because the authentication is done by google and we have nothing to send in body 
 
 // api/v1/auth/google/callback?state=/booking this redirect state will be added in the url by the previous auth login route
-router.get("/google/callback", passport.authenticate("google", { failureRedirect: "/login" }), AuthControllers.googleCallbackController)
+router.get("/google/callback", passport.authenticate("google", { failureRedirect: `${envVars.FRONTEND_URL}/login?error=There is some issues with your account. Please contact with out support team!` }), AuthControllers.googleCallbackController)
 
 // this is for setting the cookies 
 

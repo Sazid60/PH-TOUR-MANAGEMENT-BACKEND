@@ -3,10 +3,11 @@
 import { Strategy as GoogleStrategy, Profile, VerifyCallback } from "passport-google-oauth20";
 import { envVars } from "./env";
 import { User } from "../modules/user/user.model";
-import { Role } from "../modules/user/user.interface";
+import { IsActive, Role } from "../modules/user/user.interface";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import bcrypt from 'bcryptjs';
+
 
 
 passport.use(
@@ -25,7 +26,20 @@ passport.use(
                 // we are just handling login here and register will be done separately. 
                 // It will not create user automatically if user do not exists like google login because we have no data of user at this point except email and password. 
                 if (!isUserExist) {
-                    return done(null, false, { message: "User Not Found" })
+                    // return done(null, false, { message: "User Not Found" })
+                    return done("User Not Found")
+                }
+
+                if (!isUserExist.isVerified) {
+                    return done(`User Is Not Verified`)
+                }
+
+
+                if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+                    return done(`User Is ${isUserExist.isActive}`)
+                }
+                if (isUserExist.isDeleted) {
+                    return done(`User Is Deleted`)
                 }
 
                 // Returns true if any item in array matches the condition
@@ -74,10 +88,25 @@ passport.use(
                     return done(null, false, { message: "No Email Found !" }) //its like throw new app error and passport has its own 
                 }
 
-                let user = await User.findOne({ email })
+                let isUserExist = await User.findOne({ email })
+                if (isUserExist && !isUserExist.isVerified) {
+                    // throw new AppError(httpStatus.BAD_REQUEST, "User is not verified")
+                    // done("User is not verified")
+                    return done(null, false, { message: "User is not verified" })
+                }
 
-                if (!user) {
-                    user = await User.create(
+                if (isUserExist && (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE)) {
+                    // throw new AppError(httpStatus.BAD_REQUEST, `User is ${isUserExist.isActive}`)
+                    done(`User is ${isUserExist.isActive}`)
+                }
+
+                if (isUserExist && isUserExist.isDeleted) {
+                    return done(null, false, { message: "User is deleted" })
+                    // done("User is deleted")
+                }
+
+                if (!isUserExist) {
+                    isUserExist = await User.create(
                         {
                             email,
                             name: profile.displayName,
@@ -94,7 +123,7 @@ passport.use(
                     )
                 }
 
-                return done(null, user) // will set the user to req.user
+                return done(null, isUserExist) // will set the user to req.user
 
             } catch (error) {
                 console.log("Google Strategy Error", error)
