@@ -531,3 +531,340 @@ export const globalErrorHandler = async (err: any, req: Request, res: Response, 
 
 }
 ```
+
+## 32-6 Upload image during updating Tour and Division
+- for update we can think like that a image is updated and then update operation is done after that we will delete the replaced image from the cloudinary. 
+
+- division.route.ts 
+
+```ts 
+import { Router } from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { Role } from "../user/user.interface";
+import { createDivisionSchema, updateDivisionSchema } from "./division.validation";
+import { DivisionController } from "./division.controller";
+import { multerUpload } from "../../config/multer.config";
+
+
+
+const router = Router()
+
+
+router.post(
+    "/create",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.single("file"),
+    validateRequest(createDivisionSchema),
+    DivisionController.createDivision
+);
+
+router.patch(
+    "/:id",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.array("files"),
+    validateRequest(updateDivisionSchema),
+    DivisionController.updateDivision
+);
+router.delete("/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), DivisionController.deleteDivision);
+
+export const DivisionRoutes = router
+```
+- division.controller.ts 
+
+```ts 
+import { Request, Response } from "express";
+
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { DivisionService } from "./division.service";
+import { IDivision } from "./division.interface";
+
+
+const createDivision = catchAsync(async (req: Request, res: Response) => {
+
+    const payload: IDivision = {
+        ...req.body,
+        thumbnail: req.file?.path
+    }
+    const result = await DivisionService.createDivision(payload);
+    sendResponse(res, {
+        statusCode: 201,
+        success: true,
+        message: "Division created",
+        data: result,
+    });
+});
+
+
+const updateDivision = catchAsync(async (req: Request, res: Response) => {
+    const id = req.params.id;
+
+    const payload: IDivision = {
+        ...req.body,
+        thumbnail: req.file?.path
+    }
+
+    const result = await DivisionService.updateDivision(id, payload);
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Division updated",
+        data: result,
+    });
+});
+
+
+
+export const DivisionController = {
+    createDivision,
+    updateDivision,
+
+};
+```
+- division.service.ts 
+
+
+ ```ts 
+import { deleteImageFromCloudinary } from "../../config/cloudinary.config";
+import { IDivision } from "./division.interface";
+import { Division } from "./division.model";
+
+const createDivision = async (payload: IDivision) => {
+
+    const existingDivision = await Division.findOne({ name: payload.name });
+    if (existingDivision) {
+        throw new Error("A division with this name already exists.");
+    }
+
+
+    const division = await Division.create(payload);
+
+    return division
+};
+
+
+const updateDivision = async (id: string, payload: Partial<IDivision>) => {
+
+    const existingDivision = await Division.findById(id);
+    if (!existingDivision) {
+        throw new Error("Division not found.");
+    }
+
+    const duplicateDivision = await Division.findOne({
+        name: payload.name,
+        _id: { $ne: id },
+    });
+
+    if (duplicateDivision) {
+        throw new Error("A division with this name already exists.");
+    }
+
+    const updatedDivision = await Division.findByIdAndUpdate(id, payload, { new: true, runValidators: true })
+
+    if (payload.thumbnail && existingDivision.thumbnail) {
+        await deleteImageFromCloudinary(existingDivision.thumbnail)
+    }
+
+    return updatedDivision
+
+};
+
+
+
+export const DivisionService = {
+    createDivision,
+    updateDivision,
+
+};
+ ```
+- remember for update we have to do the delete after successful update in service 
+- for multiple file delete we have to do in different way 
+
+- tour.route.ts
+
+```ts 
+
+import express from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { Role } from "../user/user.interface";
+import { TourController } from "./tour.controller";
+import { createTourTypeZodSchema, createTourZodSchema, updateTourZodSchema } from "./tour.validation";
+import { multerUpload } from "../../config/multer.config";
+
+
+const router = express.Router();
+
+
+router.post(
+    "/create",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.array("files"),
+    validateRequest(createTourZodSchema),
+    TourController.createTour
+);
+
+
+
+router.patch(
+    "/:id",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    multerUpload.array("files"),
+    validateRequest(updateTourZodSchema),
+    TourController.updateTour
+);
+
+
+
+export const TourRoutes = router
+```
+
+- tour.controller.ts 
+
+
+```ts 
+
+
+import { Request, Response } from 'express';
+import { catchAsync } from '../../utils/catchAsync';
+import { sendResponse } from '../../utils/sendResponse';
+import { TourService } from './tour.service';
+import { ITour } from './tour.interface';
+
+const createTour = catchAsync(async (req: Request, res: Response) => {
+    // console.log(req.body, req.files)
+    const payload: ITour = {
+        ...req.body,
+        images: (req.files as Express.Multer.File[]).map(file => file.path)
+    }
+
+    const result = await TourService.createTour(payload);
+    sendResponse(res, {
+        statusCode: 201,
+        success: true,
+        message: 'Tour created successfully',
+        data: result,
+    });
+});
+
+
+const updateTour = catchAsync(async (req: Request, res: Response) => {
+
+
+    const payload: ITour = {
+        ...req.body,
+        images: (req.files as Express.Multer.File[]).map(file => file.path)
+    }
+
+
+    const result = await TourService.updateTour(req.params.id, payload);
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: 'Tour updated successfully',
+        data: result,
+    });
+});
+
+
+export const TourController = {
+    createTour,
+    updateTour,
+};
+```
+- update in tour.interface.ts 
+
+
+```ts 
+deleteImages?: string[]
+```
+
+- update in tour.validation.ts 
+
+
+```ts
+deleteImages: z.array(z.string()).optional() // add in update
+```
+
+- tour.service.ts 
+
+```ts 
+
+import { tourSearchableFields } from "./tour.constant";
+import { ITour, ITourType } from "./tour.interface";
+import { Tour, TourType } from "./tour.model";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { deleteImageFromCloudinary } from "../../config/cloudinary.config";
+
+
+const createTour = async (payload: ITour) => {
+    const existingTour = await Tour.findOne({ title: payload.title });
+    if (existingTour) {
+        throw new Error("A tour with this title already exists.");
+    }
+
+    const tour = await Tour.create(payload)
+
+    return tour;
+};
+
+const updateTour = async (id: string, payload: Partial<ITour>) => {
+
+    const existingTour = await Tour.findById(id);
+
+    if (!existingTour) {
+        throw new Error("Tour not found.");
+    }
+
+    // ✅ If the user has uploaded new images AND there are existing images in the DB,
+    // merge both sets together into payload.images.
+    // This helps to temporarily keep both new and old images in the payload.
+
+    if (payload.images && payload.images.length > 0 && existingTour.images && existingTour.images.length > 0) {
+        payload.images = [...payload.images, ...existingTour.images]
+        // 📝 This is combining newly added images with existing ones,
+        // so we can later filter out deleted ones and finalize the image list.
+    }
+
+    // ✅ Now handle deleted images:
+    // deletedImages array will be coming from frontend on the go. i mean if any existing image that user deleted will be stored in deletedImages array in frontend and will be coming inside payload 
+
+    if (payload.deleteImages && payload.deleteImages.length > 0 && existingTour.images && existingTour.images.length > 0) {
+        // 🧹 Step 1: Filter out the images that were marked for deletion from the DB list
+        const restDBImages = existingTour.images.filter(imageUrl => !payload.deleteImages?.includes(imageUrl))
+
+        // 📝 This gives us the images that still exist in the tour after deletion.
+
+        // this is storing the images that is not existing is delete array 
+        // there is a problem like user might delete images and add images at the same time. we have to grab the images that are newly added as well 
+
+        // ➕ Step 2: Identify new images added by user
+        const updatedPayloadImages = (payload.images || [])
+            // Remove any that are marked for deletion (just in case)
+            .filter(imageUrl => !payload.deleteImages?.includes(imageUrl))
+            // Exclude existing non-deleted DB images to avoid duplication
+            .filter(imageUrl => !restDBImages.includes(imageUrl))
+
+
+        // Step 3: Merge the remaining DB images with the new images
+        payload.images = [...restDBImages, ...updatedPayloadImages]
+    }
+
+// deletes from cloudinary
+    const updatedTour = await Tour.findByIdAndUpdate(id, payload, { new: true });
+
+    if (payload.deleteImages && payload.deleteImages.length > 0 && existingTour.images && existingTour.images.length > 0) {
+        await Promise.all(payload.deleteImages.map(url => deleteImageFromCloudinary(url)))
+    }
+
+    return updatedTour;
+};
+
+export const TourService = {
+    createTour,
+    updateTour,
+
+};
+
+```
