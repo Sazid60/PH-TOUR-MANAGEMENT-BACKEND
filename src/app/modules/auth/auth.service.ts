@@ -175,8 +175,6 @@ const forgotPassword = async (email: string) => {
         }
     })
 
-    // http://localhost:5173/reset-password?id=6877150508f9331d67711afa&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODc3MTUwNTA4ZjkzMzFkNjc3MTFhZmEiLCJlbWFpbCI6InNoYWhuYXdhenNhemlkNjBAZ21haWwuY29tIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NTM0MzIzMjksImV4cCI6MTc1MzQzMjkyOX0.erNuqJwLf-DMx5kieDlhSUbXBcLkhMGVXlVBGGtwSB0
-
 }
 
 const resetPassword = async (payload: Record<string, any>, decodedToken: JwtPayload) => {
