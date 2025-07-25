@@ -67,7 +67,7 @@ const getMe = catchAsync(async (req: Request, res: Response, next: NextFunction)
     const result = await userServices.getMe(decodedToken.userId);
     sendResponse(res, {
         success: true,
-        statusCode: httpStatus.CREATED,
+        statusCode: httpStatus.OK,
         message: "Your profile Retrieved Successfully",
         data: result.data
     })
