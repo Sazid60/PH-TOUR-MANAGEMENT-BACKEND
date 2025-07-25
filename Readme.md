@@ -183,6 +183,125 @@ process.on("uncaughtException", (err) => {
 // TESTING uncaughtException
 // throw new Error("Maamah I'm Uncaught exception error ")
 
+```
+
+## 33-2 Create a function to generate and send OTP by Email
+
+- otp.route.ts 
+
+```ts 
+// src/modules/otp/otp.routes.ts
+import express from "express";
+import { OTPController } from "./otp.controller";
+
+const router = express.Router();
+
+router.post("/send", OTPController.sendOTP); // otp will be generated and stored in redis and then will be sent to email 
+router.post("/verify", OTPController.verifyOTP);
+// when a user uses the otp this route will verify the otp taking from the redis and compare .
+//  if otp matches we will make isVerified true 
+
+export const OtpRoutes = router;
+```
+
+- otp.controller.ts 
+
+```ts 
+import { Request, Response } from "express";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { OTPService } from "./otp.service";
 
 
+const sendOTP = catchAsync(async (req: Request, res: Response) => {
+    const { email, name } = req.body
+    await OTPService.sendOTP(email, name)
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "OTP sent successfully",
+        data: null,
+    });
+})
+
+export const OTPController = {
+    sendOTP,
+    verifyOTP
+};
+```
+- utils -> templates -> otp.ejs
+
+```ejs 
+<h2>Hello <%= name %>,</h2>
+<p>Your OTP code is: <strong><%= otp %></strong></p>
+<p>This code is valid for 2 minutes.</p>
+```
+
+- otp.service.ts
+
+```ts 
+
+import crypto from "crypto"
+import { User } from "../user/user.model"
+import AppError from "../../errorHelpers/AppError"
+import { redisClient } from "../../config/redis.config"
+import { sendEmail } from "../../utils/sendEmail"
+
+const OTP_EXPIRATION = 2 * 60 // 2 minute 
+
+const generateOtp = (length = 6) => {
+    // 6 digit otp 
+    const otp = crypto.randomInt(10 ** (length - 1), 10 ** length).toString()
+    // 10 ** 5 => 10 * 10 *10 *10 *10 * 10 => 1000000
+
+    return otp
+}
+
+
+const sendOTP = async (email: string, name: string) => {
+    const user = await User.findOne({ email })
+
+    if (!user) {
+        throw new AppError(404, "User not found")
+    }
+
+    if (user.isVerified) {
+        throw new AppError(401, "You are already verified")
+    }
+
+    const otp = generateOtp();
+
+    const redisKey = `otp${email}`
+
+
+
+    // storing in redis 
+
+    // await redisClient.set(Key, value,options)
+    await redisClient.set(redisKey, otp, {
+        expiration: {
+            type: "EX", // this is for telling the time type milisec or sec or any  
+            value: OTP_EXPIRATION
+        }
+    })
+
+    //  now send the otp in email 
+
+    await sendEmail({
+        to: email,
+        subject: "Your OTP Code",
+        templateName: "otp",
+        templateData: {
+            name: name,
+            otp: otp
+        }
+    })
+
+
+};
+
+export const OTPService = {
+    sendOTP,
+    verifyOTP
+}
 ```
