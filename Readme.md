@@ -1274,3 +1274,146 @@ passport.deserializeUser(async (id: string, done: any) => {
 router.get("/google/callback", passport.authenticate("google", { failureRedirect: `${envVars.FRONTEND_URL}/login?error=There is some issues with your account. Please contact with out support team!` }), AuthControllers.googleCallbackController)
 
 ```
+
+## 32-9 Intro to forget password and reset password, generate forgot password link.
+- Frontend -> forget-password -> email -> user status check -> short expiration token (valid for 10 min) -> email -> Fronted Link http://localhost:5173/reset-password?email=saminisrar1@gmail.com&token=token -> frontend e  query theke user er email and token extract anbo -> new password user theke nibe -> backend er /reset-password api -> authorization = token -> newPassword -> token verify -> password hash -> save user password   
+
+- for this mechanism we need a email sending system 
+- for email sending we will use `nodemailer`
+- install the nodemailer 
+
+```
+npm i nodemailer -f
+```
+```
+npm i @types/nodemailer -f
+```
+- nodemailer is a transporter. 
+
+- for email template we will use `ejs` package. this will directly send html from backend. It Works like html template engine 
+
+```
+npm i ejs -f
+```
+
+```
+npm i @types/ejs -f
+```
+
+- utils -> forgetPassword.ejs 
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Forgot Password</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f7f7f7;
+        color: #333;
+      }
+      .container {
+        max-width: 500px;
+        margin: 40px auto;
+        background: #fff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      }
+      .btn {
+        display: inline-block;
+        padding: 12px 24px;
+        background: #007bff;
+        color: #fff;
+        text-decoration: none;
+        border-radius: 4px;
+        margin-top: 20px;
+      }
+      .footer {
+        margin-top: 30px;
+        font-size: 12px;
+        color: #888;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Password Reset Request</h2>
+      <p>Hello <%= name %>,</p>
+      <p>
+        We received a request to reset your password for your account. Click the
+        button below to set a new password:
+      </p>
+      <a class="btn" href="<%= resetUILink %>">Reset Password</a>
+      <p>
+        If you did not request a password reset, please ignore this email. This
+        link will expire in 10 minutes.
+      </p>
+      <div class="footer">&copy; PH Tour Management. All rights reserved.</div>
+    </div>
+  </body>
+</html>
+```
+-  utils -> sendEmail.ts 
+
+```ts 
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import nodemailer from "nodemailer"
+import { envVars } from '../config/env';
+import path from "path"
+import ejs from "ejs"
+import AppError from "../errorHelpers/AppError";
+const transporter = nodemailer.createTransport({
+    secure: true,
+    auth: {
+        user: envVars.EMAIL_SENDER.SMTP_USER,
+        pass: envVars.EMAIL_SENDER.SMTP_PASS,
+    },
+    port: Number(envVars.EMAIL_SENDER.SMTP_PORT),
+    host: envVars.EMAIL_SENDER.SMTP_HOST,
+})
+
+interface sendEmailOptions {
+    to: string,
+    subject: string,
+    templateName: string, //html templateName
+    templateData?: Record<string, any>, // html template data which will be object 
+    attachments?: {
+        fileName: string,
+        content: Buffer | string,
+        contentType: string
+    }[]
+}
+
+export const sendEmail = async ({ to, subject, attachments, templateName, templateData }: sendEmailOptions) => {
+
+    try {
+        const templatePath = path.join(__dirname, `${templateName}.ejs`) //grabbing the file path for ejs 
+
+        const html = await ejs.renderFile(templatePath, templateData)
+
+        const info = await transporter.sendMail({
+            from: envVars.EMAIL_SENDER.SMTP_FROM,
+            to: to,
+            subject: subject,
+            html: html, // we will make the template using ejs package 
+            attachments: attachments?.map(attachment => (
+                {
+                    fileName: attachment.fileName,
+                    content: attachment.content,
+                    contentType: attachment.contentType
+                }
+            ))
+        })
+
+        console.log(`\u2709\uFE0F Email sent to ${to}: ${info.messageId}`);
+    } catch (error: any) {
+        console.log("email sending error", error.message);
+        throw new AppError(401, "Email error")
+
+    }
+}
+```
