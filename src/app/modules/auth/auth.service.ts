@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import AppError from '../../errorHelpers/AppError';
@@ -9,6 +10,8 @@ import { generateToken, verifyToken } from "../../utils/jwt";
 import { envVars } from '../../config/env';
 import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
 import { JwtPayload } from "jsonwebtoken";
+import jwt from 'jsonwebtoken';
+import { sendEmail } from '../../utils/sendEmail';
 
 
 // const credentialsLogin = async (payload: Partial<IUser>) => {
@@ -97,20 +100,7 @@ const changePassword = async (oldPassword: string, newPassword: string, decodedT
     user!.save();
 
 }
-const resetPassword = async (oldPassword: string, newPassword: string, decodedToken: JwtPayload) => {
 
-    // const user = await User.findById(decodedToken.userId)
-
-    // const isOldPasswordMatch = await bcrypt.compare(oldPassword, user!.password as string)
-    // if (!isOldPasswordMatch) {
-    //     throw new AppError(httpStatus.UNAUTHORIZED, "Old Password does not match");
-    // }
-
-    // user!.password = await bcrypt.hash(newPassword, Number(envVars.BCRYPT_SALT_ROUND))
-
-    // user!.save();
-
-}
 const setPassword = async (userId: string, plainPassword: string) => {
     const user = await User.findById(userId);
 
@@ -145,10 +135,74 @@ const setPassword = async (userId: string, plainPassword: string) => {
     await user.save()
 
 }
+const forgotPassword = async (email: string) => {
+    const isUserExist = await User.findOne({ email })
+
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+    }
+
+    if (!isUserExist.isVerified) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User is not verified")
+    }
+
+    if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+        throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+    }
+    if (isUserExist.isDeleted) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+    }
+
+    const jwtPayload = {
+        userId: isUserExist._id,
+        email: isUserExist.email,
+        role: isUserExist.role
+    }
+
+    const resetToken = jwt.sign(jwtPayload, envVars.JWT_ACCESS_SECRET, {
+        expiresIn: "10m"
+    })
+
+    const resetUILink = `${envVars.FRONTEND_URL}/reset-password?id=${isUserExist._id}&token=${resetToken}`
+
+    sendEmail({
+        to: isUserExist.email,
+        subject: "Password Reset",
+        templateName: "forgetPassword",
+        templateData: {
+            name: isUserExist.name,
+            resetUILink
+        }
+    })
+
+    // http://localhost:5173/reset-password?id=6877150508f9331d67711afa&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODc3MTUwNTA4ZjkzMzFkNjc3MTFhZmEiLCJlbWFpbCI6InNoYWhuYXdhenNhemlkNjBAZ21haWwuY29tIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NTM0MzIzMjksImV4cCI6MTc1MzQzMjkyOX0.erNuqJwLf-DMx5kieDlhSUbXBcLkhMGVXlVBGGtwSB0
+
+}
+
+const resetPassword = async (payload: Record<string, any>, decodedToken: JwtPayload) => {
+    if (payload.id != decodedToken.userId) {
+        throw new AppError(401, "You can not reset your password")
+    }
+
+    const isUserExist = await User.findById(decodedToken.userId)
+    if (!isUserExist) {
+        throw new AppError(401, "User does not exist")
+    }
+
+    const hashedPassword = await bcrypt.hash(
+        payload.newPassword,
+        Number(envVars.BCRYPT_SALT_ROUND)
+    )
+
+    isUserExist.password = hashedPassword;
+
+    await isUserExist.save()
+}
 export const AuthServices = {
     // credentialsLogin,
     getNewAccessToken,
     changePassword,
     resetPassword,
-    setPassword
+    setPassword,
+    forgotPassword
 }

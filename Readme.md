@@ -1275,7 +1275,7 @@ router.get("/google/callback", passport.authenticate("google", { failureRedirect
 
 ```
 
-## 32-9 Intro to forget password and reset password, generate forgot password link.
+## 32-9 Intro to forget password and reset password, generate forgot password link. and 32-10 Setting Up Nodemailer Transporter and sendEmail function
 - Frontend -> forget-password -> email -> user status check -> short expiration token (valid for 10 min) -> email -> Fronted Link http://localhost:5173/reset-password?email=saminisrar1@gmail.com&token=token -> frontend e  query theke user er email and token extract anbo -> new password user theke nibe -> backend er /reset-password api -> authorization = token -> newPassword -> token verify -> password hash -> save user password   
 
 - for this mechanism we need a email sending system 
@@ -1391,7 +1391,7 @@ interface sendEmailOptions {
 export const sendEmail = async ({ to, subject, attachments, templateName, templateData }: sendEmailOptions) => {
 
     try {
-        const templatePath = path.join(__dirname, `${templateName}.ejs`) //grabbing the file path for ejs 
+        const templatePath = path.join(__dirname, `templates/${templateName}.ejs`) //grabbing the file path for ejs 
 
         const html = await ejs.renderFile(templatePath, templateData)
 
@@ -1415,5 +1415,172 @@ export const sendEmail = async ({ to, subject, attachments, templateName, templa
         throw new AppError(401, "Email error")
 
     }
+}
+```
+
+## 32-11 Send email using nodemailer when hitting forget password route
+
+- auth route.ts 
+
+```ts 
+
+import { NextFunction, Request, Response, Router } from "express";
+import { AuthControllers } from "./auth.controller";
+import { checkAuth } from '../../middlewares/checkAuth';
+import { Role } from "../user/user.interface";
+import passport from "passport";
+import { envVars } from "../../config/env";
+
+const router = Router()
+router.post("/forgot-password", AuthControllers.forgotPassword)
+router.post("/reset-password", checkAuth(...Object.values(Role)), AuthControllers.resetPassword)
+
+export const authRoutes = router
+```
+- auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+import { setAuthCookie } from "../../utils/setCookie";
+import bcrypt from 'bcryptjs';
+import { JwtPayload } from "jsonwebtoken";
+import { createUserToken } from "../../utils/userToken";
+import { envVars } from "../../config/env";
+import passport from "passport";
+
+
+const forgotPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const { email } = req.body
+
+    await AuthServices.forgotPassword(email)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Email Sent Successfully",
+        data: null
+    })
+
+})
+
+const resetPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const { newPassword, id } = req.body
+    const decodedToken = req.user
+
+    await AuthServices.resetPassword(req.body, decodedToken as JwtPayload)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "password reset Successfully",
+        data: null
+    })
+
+})
+
+
+
+export const AuthControllers = {
+    resetPassword,
+    forgotPassword
+}
+
+```
+
+- auth.service.ts 
+
+```ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import AppError from '../../errorHelpers/AppError';
+import { IAuthProvider, IsActive, IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken, verifyToken } from "../../utils/jwt";
+import { envVars } from '../../config/env';
+import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
+import { JwtPayload } from "jsonwebtoken";
+import jwt from 'jsonwebtoken';
+import { sendEmail } from '../../utils/sendEmail';
+
+
+const forgotPassword = async (email: string) => {
+    const isUserExist = await User.findOne({ email })
+
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+    }
+
+    if (!isUserExist.isVerified) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User is not verified")
+    }
+
+    if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+        throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+    }
+    if (isUserExist.isDeleted) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+    }
+
+    const jwtPayload = {
+        userId: isUserExist._id,
+        email: isUserExist.email,
+        role: isUserExist.role
+    }
+
+    const resetToken = jwt.sign(jwtPayload, envVars.JWT_ACCESS_SECRET, {
+        expiresIn: "10m"
+    })
+
+    const resetUILink = `${envVars.FRONTEND_URL}/reset-password?id=${isUserExist._id}&token=${resetToken}`
+
+    sendEmail({
+        to: isUserExist.email,
+        subject: "Password Reset",
+        templateName: "forgetPassword",
+        templateData: {
+            name: isUserExist.name,
+            resetUILink
+        }
+    })
+
+    // http://localhost:5173/reset-password?id=6877150508f9331d67711afa&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODc3MTUwNTA4ZjkzMzFkNjc3MTFhZmEiLCJlbWFpbCI6InNoYWhuYXdhenNhemlkNjBAZ21haWwuY29tIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3NTM0MzIzMjksImV4cCI6MTc1MzQzMjkyOX0.erNuqJwLf-DMx5kieDlhSUbXBcLkhMGVXlVBGGtwSB0
+
+}
+
+const resetPassword = async (payload: Record<string, any>, decodedToken: JwtPayload) => {
+    if (payload.id != decodedToken.userId) {
+        throw new AppError(401, "You can not reset your password")
+    }
+
+    const isUserExist = await User.findById(decodedToken.userId)
+    if (!isUserExist) {
+        throw new AppError(401, "User does not exist")
+    }
+
+    const hashedPassword = await bcrypt.hash(
+        payload.newPassword,
+        Number(envVars.BCRYPT_SALT_ROUND)
+    )
+
+    isUserExist.password = hashedPassword;
+
+    await isUserExist.save()
+}
+export const AuthServices = {
+    resetPassword,
+    forgotPassword
 }
 ```

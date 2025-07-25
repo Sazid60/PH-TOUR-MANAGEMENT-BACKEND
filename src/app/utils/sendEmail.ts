@@ -30,7 +30,8 @@ interface sendEmailOptions {
 export const sendEmail = async ({ to, subject, attachments, templateName, templateData }: sendEmailOptions) => {
 
     try {
-        const templatePath = path.join(__dirname, `${templateName}.ejs`)
+        const templatePath = path.join(__dirname, `templates/${templateName}.ejs`)
+        console.log(templatePath)
 
         const html = await ejs.renderFile(templatePath, templateData)
 
