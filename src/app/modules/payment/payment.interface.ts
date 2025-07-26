@@ -16,5 +16,5 @@ export interface IPayment {
     // this is kept optional because initially we will create pending payment data and after successful payment it will be coming from sslcomerge so for this reason it will be any type 
     invoiceUrl?: string,
     // this will be coming from sslcommerge as well after successful payment 
-    status: PAYMENT_STATUS
+    status: PAYMENT_STATUS,
 }

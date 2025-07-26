@@ -29,7 +29,7 @@ const bookingSchema = new Schema<IBooking>(
         }
     },
     {
-        timestamps: false
+        timestamps: true
     }
 )
 
