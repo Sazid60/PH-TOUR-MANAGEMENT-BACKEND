@@ -7,6 +7,10 @@ import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
 import { SSLService } from "../sslCommerz/sslCommerz.service";
 import { PAYMENT_STATUS } from "./payment.interface";
 import { Payment } from "./payment.model";
+import { generatePdf, IInvoiceData } from "../../utils/invoice";
+import { ITour } from "../tour/tour.interface";
+import { IUser } from "../user/user.interface";
+import { sendEmail } from "../../utils/sendEmail";
 
 const initPayment = async (bookingId: string) => {
 
@@ -54,12 +58,52 @@ const successPayment = async (query: Record<string, string>) => {
             status: PAYMENT_STATUS.PAID,
         }, { new: true, runValidators: true, session: session })
 
-        await Booking
+        // this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedPayment) {
+            throw new AppError(401, "Payment not found")
+        }
+
+        // we are holding the file as we need to generate pdf and need some information
+        const updatedBooking = await Booking
             .findByIdAndUpdate(
                 updatedPayment?.booking,
                 { status: BOOKING_STATUS.COMPLETE },
-                { runValidators: true, session }
+                { new: true, runValidators: true, session }
             )
+            .populate("tour", "title")
+            .populate("user", "name email")
+        // we are population since we are just storing the id and we need the info for generating the  invoice pdf 
+
+        //  this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedBooking) {
+            throw new AppError(401, "Booking not found")
+        }
+
+        const invoiceData: IInvoiceData = {
+            bookingDate: updatedBooking.createdAt as Date,
+            guestCount: updatedBooking.guestCount,
+            totalAmount: updatedPayment.amount,
+            tourTitle: (updatedBooking.tour as unknown as ITour).title, // as we have populated
+            transactionId: updatedPayment.transactionId,
+            userName: (updatedBooking.user as unknown as IUser).name // as we populated
+        }
+        const pdfBuffer = await generatePdf(invoiceData)
+
+          await sendEmail({
+            to: (updatedBooking.user as unknown as IUser).email,
+            subject: "Your Booking Invoice",
+            templateName: "invoice",
+            templateData: invoiceData,
+            attachments: [
+                {
+                    filename: "invoice.pdf",
+                    content: pdfBuffer,
+                    contentType: "application/pdf"
+                }
+            ]
+        })
+
+
 
         await session.commitTransaction(); //transaction
         session.endSession()

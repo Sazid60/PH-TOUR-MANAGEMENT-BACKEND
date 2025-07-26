@@ -464,3 +464,334 @@ npm i pdfkit -f
 ```
 npm i @types/pdfkit -f
 ```
+
+- we will generate a pdf and store it somewhere and give in email the download link and the link will be stored in database as well inside `invoiceUrl`.
+- we will use pdfkit foe generating pdf 
+- A JavaScript PDF generation library for Node and the browser.
+- PDFKit is a PDF document generation library for Node and the browser that makes creating complex, multi-page, printable documents easy. The API embraces chainability, and includes both low level functions as well as abstractions for higher level functionality. The PDFKit API is designed to be simple, so generating complex documents is often as simple as a few function calls.
+
+#### Lets generate a function for the generating pdf 
+- We will use stream buffer to create a pdf 
+- When generating a PDF, PDFKit does not create the entire file in one go.
+- Instead:
+    1. It streams chunks of binary data (pieces of the PDF file) as they are generated.
+    2. Each chunk is a Uint8Array (raw byte data).
+- cannot use those chunks individually.
+- need to collect all chunks → combine them → get one complete PDF file.
+- Thats We create an array to temporarily store all chunks.
+
+```ts 
+const buffer: Uint8Array[] = [];
+```
+#### How Does This Method Work?
+
+##### Step 1: Listen for "data"
+
+```ts 
+doc.on("data", (chunk) => buffer.push(chunk));
+```
+- Each time PDFKit generates part of the PDF, it emits a "data" event.
+- That chunk is a piece of binary data.
+- We push it into our buffer array.
+
+##### doc.on("end", () => resolve(Buffer.concat(buffer)));
+```ts
+doc.on("end", () => resolve(Buffer.concat(buffer)));
+
+```
+- "end" means PDF generation is finished.
+
+- At that moment:
+
+    1. buffer contains multiple small Uint8Array chunks.
+    2. Buffer.concat(buffer) merges them into one large Buffer.
+    3. That Buffer now represents the entire PDF file.
+
+##### 3. Why Use Buffer.concat Instead of a String?
+
+- PDF files are binary data (not plain text).
+- Using strings would corrupt the data.
+- Buffer in Node.js is a special class for handling binary data correctly.
+- Buffer.concat:
+
+    1. Allocates enough memory to hold all chunks,
+    2. Copies each chunk in order,
+    3. Returns a single continuous block representing the PDF file.
+
+- so the flow is we are grabbing the info inside function and pdfkit is generating the pdf gradually and making buffer?
+
+- utils -> invoice.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import PDFDocument from "pdfkit";
+import AppError from "../errorHelpers/AppError";
+
+export interface IInvoiceData {
+    transactionId: string;
+    bookingDate: Date;
+    userName: string;
+    tourTitle: string;
+    guestCount: number;
+    totalAmount: number;
+}
+
+export const generatePdf = async (invoiceData: IInvoiceData)=> {
+    try {
+        // being async function we have explicitly used Promise here because we are using stream system to load the data. 
+
+
+        // async/await works only with functions that already return a promise.
+        // doc.on("end", ...) is callback-style, so you must manually wrap it in a Promise to make it await-compatible.
+        return new Promise((resolve, reject) => {
+            const doc = new PDFDocument({ size: "A4", margin: 50 }) 
+            // Creates a new PDFDocument instance (PDFKit). Not explaining PDFKit specifics.
+            const buffer: Uint8Array[] = []; 
+            //Creates an array named buffer to temporarily store chunks of binary data emitted by the PDF generator.
+            // here we are taking an array of buffer which is a type of  UNit8Array[] made for buffer 
+            // in this array we will store the buffered data in chunk by chunk
+
+
+            doc.on("data", (chunk) => buffer.push(chunk)) 
+            // wEvery time the document emits a "data" event (a chunk of PDF bytes), push it into buffer.
+            doc.on("end", () => resolve(Buffer.concat(buffer)))
+            //when all chunks are loaded we will concat the chunks and add it taking from the buffer.
+            //here big B buffer is coming from javascript its grabbing the buffer array
+            // Concatenate all chunks from buffer into a single Buffer,
+            doc.on("error", (err) => reject(err))
+
+            //PDF Content
+            doc.fontSize(20).text("Invoice", { align: "center" });
+            doc.moveDown()
+            doc.fontSize(14).text(`Transaction ID : ${invoiceData.transactionId}`)
+            doc.text(`Booking Date : ${invoiceData.bookingDate}`)
+            doc.text(`Customer : ${invoiceData.userName}`)
+
+            doc.moveDown();
+            doc.text(`Tour: ${invoiceData.tourTitle}`);
+            doc.text(`Guests: ${invoiceData.guestCount}`);
+            doc.text(`Total Amount: $${invoiceData.totalAmount.toFixed(2)}`);
+            doc.moveDown();
+
+            doc.text("Thank you for booking with us!", { align: "center" });
+            doc.end()
+
+        })
+
+    } catch (error: any) {
+        console.log(error);
+        throw new AppError(401, `Pdf creation error ${error.message}`)
+    }
+}
+```
+
+- here only the buffer is created through the function 
+- now from the buffer we have to create a pdf and upload in cloudinary and send the uploaded link to email and as well we have to store te link in database `invoiceUrl`
+
+## 33-5 Send Email of the PDF to user After Successful payment with SSLCommerz
+- utils ->  templates- >invoice.ejs 
+
+```js
+<h2>Hello <%= name %>,</h2>
+<p>Your OTP code is: <strong><%= otp %></strong></p>
+<p>This code is valid for 2 minutes.</p>
+```
+- 
+
+- utils -> invoice.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import PDFDocument from "pdfkit";
+import AppError from "../errorHelpers/AppError";
+
+export interface IInvoiceData {
+    transactionId: string;
+    bookingDate: Date;
+    userName: string;
+    tourTitle: string;
+    guestCount: number;
+    totalAmount: number;
+}
+
+export const generatePdf = async (invoiceData: IInvoiceData) : Promise<Buffer<ArrayBufferLike>>=> 
+// here Promise<Buffer<ArrayBufferLike>> type is given since we have gave gave in emailjs that the attachment content can be string or buffer .
+{
+    try {
+        // being async function we have explicitly used Promise here because we are using stream system to load the data. 
+
+
+        // async/await works only with functions that already return a promise.
+        // doc.on("end", ...) is callback-style, so you must manually wrap it in a Promise to make it await-compatible.
+        return new Promise((resolve, reject) => {
+            const doc = new PDFDocument({ size: "A4", margin: 50 }) 
+            // Creates a new PDFDocument instance (PDFKit). Not explaining PDFKit specifics.
+            const buffer: Uint8Array[] = []; 
+            //Creates an array named buffer to temporarily store chunks of binary data emitted by the PDF generator.
+            // here we are taking an array of buffer which is a type of  UNit8Array[] made for buffer 
+            // in this array we will store the buffered data in chunk by chunk
+
+
+            doc.on("data", (chunk) => buffer.push(chunk)) 
+            // wEvery time the document emits a "data" event (a chunk of PDF bytes), push it into buffer.
+            doc.on("end", () => resolve(Buffer.concat(buffer)))
+            //when all chunks are loaded we will concat the chunks and add it taking from the buffer.
+            //here big B buffer is coming from javascript its grabbing the buffer array
+            // Concatenate all chunks from buffer into a single Buffer,
+            doc.on("error", (err) => reject(err))
+
+            //PDF Content
+            doc.fontSize(20).text("Invoice", { align: "center" });
+            doc.moveDown()
+            doc.fontSize(14).text(`Transaction ID : ${invoiceData.transactionId}`)
+            doc.text(`Booking Date : ${invoiceData.bookingDate}`)
+            doc.text(`Customer : ${invoiceData.userName}`)
+
+            doc.moveDown();
+            doc.text(`Tour: ${invoiceData.tourTitle}`);
+            doc.text(`Guests: ${invoiceData.guestCount}`);
+            doc.text(`Total Amount: $${invoiceData.totalAmount.toFixed(2)}`);
+            doc.moveDown();
+
+            doc.text("Thank you for booking with us!", { align: "center" });
+            doc.end()
+
+        })
+
+    } catch (error: any) {
+        console.log(error);
+        throw new AppError(401, `Pdf creation error ${error.message}`)
+    }
+}
+```
+
+- payment.service.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import httpStatus from "http-status-codes";
+import AppError from "../../errorHelpers/AppError";
+import { BOOKING_STATUS } from "../booking/booking.interface";
+import { Booking } from "../booking/booking.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+import { PAYMENT_STATUS } from "./payment.interface";
+import { Payment } from "./payment.model";
+import { generatePdf, IInvoiceData } from "../../utils/invoice";
+import { ITour } from "../tour/tour.interface";
+import { IUser } from "../user/user.interface";
+import { sendEmail } from "../../utils/sendEmail";
+
+const initPayment = async (bookingId: string) => {
+
+    const payment = await Payment.findOne({ booking: bookingId })
+
+    if (!payment) {
+        throw new AppError(httpStatus.NOT_FOUND, "Payment Not Found. You have not booked this tour")
+    }
+
+    const booking = await Booking.findById(payment.booking)
+
+    const userAddress = (booking?.user as any).address
+    const userEmail = (booking?.user as any).email
+    const userPhoneNumber = (booking?.user as any).phone
+    const userName = (booking?.user as any).name
+
+    const sslPayload: ISSLCommerz = {
+        address: userAddress,
+        email: userEmail,
+        phoneNumber: userPhoneNumber,
+        name: userName,
+        amount: payment.amount,
+        transactionId: payment.transactionId
+    }
+
+    const sslPayment = await SSLService.sslPaymentInit(sslPayload)
+
+    return {
+        paymentUrl: sslPayment.GatewayPageURL
+    }
+
+};
+const successPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to COnfirm 
+    // Update Payment Status to PAID
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.PAID,
+        }, { new: true, runValidators: true, session: session })
+
+        // this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedPayment) {
+            throw new AppError(401, "Payment not found")
+        }
+
+        // we are holding the file as we need to generate pdf and need some information
+        const updatedBooking = await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.COMPLETE },
+                { new: true, runValidators: true, session }
+            )
+            .populate("tour", "title")
+            .populate("user", "name email")
+        // we are population since we are just storing the id and we need the info for generating the  invoice pdf 
+
+        //  this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedBooking) {
+            throw new AppError(401, "Booking not found")
+        }
+
+        const invoiceData: IInvoiceData = {
+            bookingDate: updatedBooking.createdAt as Date,
+            guestCount: updatedBooking.guestCount,
+            totalAmount: updatedPayment.amount,
+            tourTitle: (updatedBooking.tour as unknown as ITour).title, // as we have populated
+            transactionId: updatedPayment.transactionId,
+            userName: (updatedBooking.user as unknown as IUser).name // as we populated
+        }
+        const pdfBuffer = await generatePdf(invoiceData)
+
+          await sendEmail({
+            to: (updatedBooking.user as unknown as IUser).email,
+            subject: "Your Booking Invoice",
+            templateName: "invoice",
+            templateData: invoiceData,
+            attachments: [
+                {
+                    filename: "invoice.pdf",
+                    content: pdfBuffer,
+                    contentType: "application/pdf"
+                }
+            ]
+        })
+
+
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: true, message: "Payment Completed Successfully" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+
+
+
+export const PaymentService = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+};
+```

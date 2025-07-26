@@ -21,7 +21,7 @@ interface sendEmailOptions {
     templateName: string, //html templateName
     templateData?: Record<string, any>, // html template data which will be object 
     attachments?: {
-        fileName: string,
+        filename: string,
         content: Buffer | string,
         contentType: string
     }[]
@@ -42,7 +42,7 @@ export const sendEmail = async ({ to, subject, attachments, templateName, templa
             html: html, // we will make the template using ejs package 
             attachments: attachments?.map(attachment => (
                 {
-                    fileName: attachment.fileName,
+                    filename: attachment.filename,
                     content: attachment.content,
                     contentType: attachment.contentType
                 }
