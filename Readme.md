@@ -464,3 +464,123 @@ npm i pdfkit -f
 ```
 npm i @types/pdfkit -f
 ```
+
+- we will generate a pdf and store it somewhere and give in email the download link and the link will be stored in database as well inside `invoiceUrl`.
+- we will use pdfkit foe generating pdf 
+- A JavaScript PDF generation library for Node and the browser.
+- PDFKit is a PDF document generation library for Node and the browser that makes creating complex, multi-page, printable documents easy. The API embraces chainability, and includes both low level functions as well as abstractions for higher level functionality. The PDFKit API is designed to be simple, so generating complex documents is often as simple as a few function calls.
+
+#### Lets generate a function for the generating pdf 
+- We will use stream buffer to create a pdf 
+- When generating a PDF, PDFKit does not create the entire file in one go.
+- Instead:
+    1. It streams chunks of binary data (pieces of the PDF file) as they are generated.
+    2. Each chunk is a Uint8Array (raw byte data).
+- cannot use those chunks individually.
+- need to collect all chunks → combine them → get one complete PDF file.
+- Thats We create an array to temporarily store all chunks.
+
+```ts 
+const buffer: Uint8Array[] = [];
+```
+#### How Does This Method Work?
+
+##### Step 1: Listen for "data"
+
+```ts 
+doc.on("data", (chunk) => buffer.push(chunk));
+```
+- Each time PDFKit generates part of the PDF, it emits a "data" event.
+- That chunk is a piece of binary data.
+- We push it into our buffer array.
+
+##### doc.on("end", () => resolve(Buffer.concat(buffer)));
+```ts
+doc.on("end", () => resolve(Buffer.concat(buffer)));
+
+```
+- "end" means PDF generation is finished.
+
+- At that moment:
+
+    1. buffer contains multiple small Uint8Array chunks.
+    2. Buffer.concat(buffer) merges them into one large Buffer.
+    3. That Buffer now represents the entire PDF file.
+
+##### 3. Why Use Buffer.concat Instead of a String?
+
+- PDF files are binary data (not plain text).
+- Using strings would corrupt the data.
+- Buffer in Node.js is a special class for handling binary data correctly.
+- Buffer.concat:
+
+    1. Allocates enough memory to hold all chunks,
+    2. Copies each chunk in order,
+    3. Returns a single continuous block representing the PDF file.
+
+- so the flow is we are grabbing the info inside function and pdfkit is generating the pdf gradually and making buffer?
+
+- utils -> invoice.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import PDFDocument from "pdfkit";
+import AppError from "../errorHelpers/AppError";
+
+export interface IInvoiceData {
+    transactionId: string;
+    bookingDate: Date;
+    userName: string;
+    tourTitle: string;
+    guestCount: number;
+    totalAmount: number;
+}
+
+export const generatePdf = async (invoiceData: IInvoiceData)=> {
+    try {
+        // being async function we have explicitly used Promise here because we are using stream system to load the data. 
+
+
+        // async/await works only with functions that already return a promise.
+        // doc.on("end", ...) is callback-style, so you must manually wrap it in a Promise to make it await-compatible.
+        return new Promise((resolve, reject) => {
+            const doc = new PDFDocument({ size: "A4", margin: 50 }) 
+            // Creates a new PDFDocument instance (PDFKit). Not explaining PDFKit specifics.
+            const buffer: Uint8Array[] = []; 
+            //Creates an array named buffer to temporarily store chunks of binary data emitted by the PDF generator.
+            // here we are taking an array of buffer which is a type of  UNit8Array[] made for buffer 
+            // in this array we will store the buffered data in chunk by chunk
+
+
+            doc.on("data", (chunk) => buffer.push(chunk)) 
+            // wEvery time the document emits a "data" event (a chunk of PDF bytes), push it into buffer.
+            doc.on("end", () => resolve(Buffer.concat(buffer)))
+            //when all chunks are loaded we will concat the chunks and add it taking from the buffer.
+            //here big B buffer is coming from javascript its grabbing the buffer array
+            // Concatenate all chunks from buffer into a single Buffer,
+            doc.on("error", (err) => reject(err))
+
+            //PDF Content
+            doc.fontSize(20).text("Invoice", { align: "center" });
+            doc.moveDown()
+            doc.fontSize(14).text(`Transaction ID : ${invoiceData.transactionId}`)
+            doc.text(`Booking Date : ${invoiceData.bookingDate}`)
+            doc.text(`Customer : ${invoiceData.userName}`)
+
+            doc.moveDown();
+            doc.text(`Tour: ${invoiceData.tourTitle}`);
+            doc.text(`Guests: ${invoiceData.guestCount}`);
+            doc.text(`Total Amount: $${invoiceData.totalAmount.toFixed(2)}`);
+            doc.moveDown();
+
+            doc.text("Thank you for booking with us!", { align: "center" });
+            doc.end()
+
+        })
+
+    } catch (error: any) {
+        console.log(error);
+        throw new AppError(401, `Pdf creation error ${error.message}`)
+    }
+}
+```
