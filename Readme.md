@@ -450,3 +450,17 @@ export const OTPService = {
     verifyOTP
 }
 ```
+
+## 33-4 Create a function to generate pdf of the invoice of booking and payment of a tour
+- so far we are sending a success message to frontend after successful payment. now we will send email and make a pdf and send the pdf link in the email 
+- we will use a package named `pdf kit` for generating pdf 
+
+[pdfkit](https://www.npmjs.com/package/pdfkit)
+
+```
+npm i pdfkit -f
+```
+
+```
+npm i @types/pdfkit -f
+```
