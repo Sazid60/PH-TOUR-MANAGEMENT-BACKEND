@@ -592,9 +592,14 @@ export const generatePdf = async (invoiceData: IInvoiceData)=> {
 - utils ->  templates- >invoice.ejs 
 
 ```js
-<h2>Hello <%= name %>,</h2>
-<p>Your OTP code is: <strong><%= otp %></strong></p>
-<p>This code is valid for 2 minutes.</p>
+<h1>Invoice for Booking: <%= tourTitle %></h1>
+<p><strong>Payment ID:</strong> <%= transactionId %></p>
+<p><strong>Amount Paid:</strong> $<%= totalAmount %></p>
+<p><strong>Booking Date:</strong> <%= bookingDate %></p>
+<p><strong>Guest Count:</strong> <%= guestCount %></p>
+<p><strong>User:</strong> <%= userName %></p>
+<p>Thank you for your booking!</p>
+
 ```
 - 
 
@@ -786,6 +791,242 @@ const successPayment = async (query: Record<string, string>) => {
     }
 };
 
+export const PaymentService = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+};
+```
+
+## 33-6 Upload Invoice PDF to Cloudinary and get Invoice Download URL
+
+- Now lets upload the generated invoice pdf to the cloudinary. 
+- Here `multer` will not help us because we are not taking the file from request body we are generating the file on the go after successful payment.  
+- For this reason we have to upload manually in cloudinary. 
+- WE have to make a function for cloudinary manual upload. 
+- Remember we will use buffer and streaming system upload. for this reason we will listen the buffer and upload the buffer in cloudinary.
+
+#### Use case of stream buffer
+- **Stream** = “Serve tea directly into the guest’s cup as it’s pouring.”
+- **Buffer** = “Fill the entire teapot, then serve.”
+- **Stream + Buffer** = “Collect tea drops in a pot (stream), then later serve the full pot (buffer).”
+
+- this is the reason we will use stream and buffer at the same time 
+
+#### Lets configure the cloudinary.config.ts for streaming upload(manual) in cloudinary
+- we already have a Buffer generated from the generatePdf function
+- now we need to convert the buffer to a stream for uploading into cloudinary as stream 
+- full procedure 
+
+```
+Buffer (PDF)  
+   ↓  
+Node.js Stream (upload_stream)  
+   ↓  
+Cloudinary API  
+   ↓  
+Upload complete → returns Cloudinary URL & metadata.
+
+
+| Method         | What it does                  | Does it close the stream? |
+| -------------- | ----------------------------- | ------------------------- |
+| `.write(data)` | Sends data to the stream.     | ❌ No, keeps stream open.  |
+| `.end(data)`   | Sends final data & closes it. | ✅ Yes.                    |
+
+
+```
+- cloudinary.config.ts
+
+```ts
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { v2 as cloudinary } from 'cloudinary';
+import { envVars } from './env';
+import AppError from '../errorHelpers/AppError';
+
+import stream from "stream"
+import { UploadApiResponse } from 'cloudinary';
+
+
+cloudinary.config({
+    cloud_name: envVars.CLOUDINARY.CLOUDINARY_CLOUD_NAME,
+    api_key: envVars.CLOUDINARY.CLOUDINARY_API_KEY,
+    api_secret: envVars.CLOUDINARY.CLOUDINARY_API_SECRET
+})
+
+// cloudinary.v2.uploader.upload(file, options).then(callback);
+// this is the system of cloudinary but we will do it using a package.
+// this package will take the file and will do the work and will return the url inside the req.file object 
+
+export const deleteImageFromCloudinary = async (url: string) => {
+    try {
+        const regex = /\/v\d+\/(.*?)\.(jpg|jpeg|png|gif|webp)$/i;
+        const match = url.match(regex);
+
+        console.log({ match })
+        if (match && match[1]) {
+            const public_id = match[1];
+            await cloudinary.uploader.destroy(public_id)
+            console.log(`File ${public_id} is deleted from cloudinary`);
+        }
+    } catch (error: any) {
+        throw new AppError(401, "Cloudinary image deletion failed", error.message)
+    }
+}
+// This function converts your Buffer into a stream and uploads it.
+export const uploadBufferToCloudinary = async (buffer: Buffer, fileName: string) : Promise<UploadApiResponse | undefined>  => {
+    // It returns a Promise that will eventually resolve to "Hello".
+
+    try {
+        // cloudinary upload function doesn’t return a Promise, so you must manually wrap it
+
+        return new Promise((resolve, reject) => {
+            const public_id = `pdf/${fileName}-${Date.now()}`
+
+
+            // converting the buffer in stream 
+            const bufferStream = new stream.PassThrough()
+            // PassThrough is a special Node.js stream that lets you push a Buffer and treat it as a readable stream.
+            bufferStream.end(buffer)
+
+            // Writes the last chunk of data (buffer) to the stream.
+
+
+            // template cloudinary.uploader.upload_stream(options, callback)
+
+            cloudinary.uploader.upload_stream(
+                {
+                    resource_type: "auto",
+                    public_id: public_id,
+                    folder: "pdf"
+                },
+                (error, result) => {
+                    if (error) {
+                        return reject(error);
+                    }
+                    resolve(result)
+                }
+            ).end(buffer)
+            // You immediately .end(buffer) → This writes the entire buffer to that stream.
+            // .end(buffer) Writes your entire buffer to the Cloudinary stream.
+            // Closes the stream so Cloudinary can finish uploading.
+
+
+
+        })
+    } catch (error: any) {
+        console.log(error);
+        throw new AppError(401, `Error uploading file ${error.message}`)
+    }
+}
+export const cloudinaryUpload = cloudinary
+```
+
+- payment.service.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import httpStatus from "http-status-codes";
+import AppError from "../../errorHelpers/AppError";
+import { BOOKING_STATUS } from "../booking/booking.interface";
+import { Booking } from "../booking/booking.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+import { PAYMENT_STATUS } from "./payment.interface";
+import { Payment } from "./payment.model";
+import { generatePdf, IInvoiceData } from "../../utils/invoice";
+import { ITour } from "../tour/tour.interface";
+import { IUser } from "../user/user.interface";
+import { sendEmail } from "../../utils/sendEmail";
+import { uploadBufferToCloudinary } from "../../config/cloudinary.config";
+
+const successPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to Confirm 
+    // Update Payment Status to PAID
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.PAID,
+        }, { new: true, runValidators: true, session: session })
+
+        // this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedPayment) {
+            throw new AppError(401, "Payment not found")
+        }
+
+        // we are holding the file as we need to generate pdf and need some information
+        const updatedBooking = await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.COMPLETE },
+                { new: true, runValidators: true, session }
+            )
+            .populate("tour", "title")
+            .populate("user", "name email")
+        // we are population since we are just storing the id and we need the info for generating the  invoice pdf 
+
+        //  this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedBooking) {
+            throw new AppError(401, "Booking not found")
+        }
+
+        const invoiceData: IInvoiceData = {
+            bookingDate: updatedBooking.createdAt as Date,
+            guestCount: updatedBooking.guestCount,
+            totalAmount: updatedPayment.amount,
+            tourTitle: (updatedBooking.tour as unknown as ITour).title, // as we have populated
+            transactionId: updatedPayment.transactionId,
+            userName: (updatedBooking.user as unknown as IUser).name // as we populated
+        }
+        const pdfBuffer = await generatePdf(invoiceData)
+
+        // uploading in cloudinary 
+// using any for now 
+        const cloudinaryResult  = await uploadBufferToCloudinary(pdfBuffer, "invoice")
+        // console.log({cloudinaryResult})
+
+        if(!cloudinaryResult){
+            throw new AppError(401, "Error Uploading Pdf")
+        }
+
+        // update our booking 
+
+        await Payment.findByIdAndUpdate(updatedPayment._id, {invoiceUrl : cloudinaryResult.secure_url}, {runValidators:true, session})
+
+          await sendEmail({
+            to: (updatedBooking.user as unknown as IUser).email,
+            subject: "Your Booking Invoice",
+            templateName: "invoice",
+            templateData: invoiceData,
+            attachments: [
+                {
+                    filename: "invoice.pdf",
+                    content: pdfBuffer,
+                    contentType: "application/pdf"
+                }
+            ]
+        })
+
+
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: true, message: "Payment Completed Successfully" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+
 
 
 export const PaymentService = {
@@ -793,5 +1034,198 @@ export const PaymentService = {
     successPayment,
     failPayment,
     cancelPayment,
+};
+```
+
+#### lets make a route for getting the get downloadInvoice url
+- payment.route.ts 
+
+
+```ts 
+import express from "express";
+import { PaymentController } from "./payment.controller";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "../user/user.interface";
+
+
+const router = express.Router();
+
+
+router.post("/init-payment/:bookingId", PaymentController.initPayment);
+router.post("/success", PaymentController.successPayment);
+router.post("/fail", PaymentController.failPayment);
+router.post("/cancel", PaymentController.cancelPayment);
+router.get("/invoice/:paymentId", checkAuth(...Object.values(Role)), PaymentController.getInvoiceDownloadUrl);
+export const PaymentRoutes = router;
+```
+- payment.controller.ts 
+
+```ts
+import { Request, Response } from "express";
+import { envVars } from "../../config/env";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { PaymentService } from "./payment.service";
+
+const successPayment = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await PaymentService.successPayment(query as Record<string, string>)
+
+    if (result.success) {
+        res.redirect(`${envVars.SSL.SSL_SUCCESS_FRONTEND_URL}?transactionId=${query.transactionId}&message=${result.message}&amount=${query.amount}&status=${query.status}`)
+    }
+});
+
+
+const getInvoiceDownloadUrl = catchAsync(
+    async (req: Request, res: Response) => {
+        const { paymentId } = req.params;
+        const result = await PaymentService.getInvoiceDownloadUrl(paymentId);
+        sendResponse(res, {
+            statusCode: 200,
+            success: true,
+            message: "Invoice download URL retrieved successfully",
+            data: result,
+        });
+    }
+);
+
+export const PaymentController = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+    getInvoiceDownloadUrl
+};
+```
+
+- payment.service.ts
+
+```ts
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import httpStatus from "http-status-codes";
+import AppError from "../../errorHelpers/AppError";
+import { BOOKING_STATUS } from "../booking/booking.interface";
+import { Booking } from "../booking/booking.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+import { PAYMENT_STATUS } from "./payment.interface";
+import { Payment } from "./payment.model";
+import { generatePdf, IInvoiceData } from "../../utils/invoice";
+import { ITour } from "../tour/tour.interface";
+import { IUser } from "../user/user.interface";
+import { sendEmail } from "../../utils/sendEmail";
+import { uploadBufferToCloudinary } from "../../config/cloudinary.config";
+
+
+const successPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to COnfirm 
+    // Update Payment Status to PAID
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.PAID,
+        }, { new: true, runValidators: true, session: session })
+
+        // this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedPayment) {
+            throw new AppError(401, "Payment not found")
+        }
+
+        // we are holding the file as we need to generate pdf and need some information
+        const updatedBooking = await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.COMPLETE },
+                { new: true, runValidators: true, session }
+            )
+            .populate("tour", "title")
+            .populate("user", "name email")
+        // we are population since we are just storing the id and we need the info for generating the  invoice pdf 
+
+        //  this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedBooking) {
+            throw new AppError(401, "Booking not found")
+        }
+
+        const invoiceData: IInvoiceData = {
+            bookingDate: updatedBooking.createdAt as Date,
+            guestCount: updatedBooking.guestCount,
+            totalAmount: updatedPayment.amount,
+            tourTitle: (updatedBooking.tour as unknown as ITour).title, // as we have populated
+            transactionId: updatedPayment.transactionId,
+            userName: (updatedBooking.user as unknown as IUser).name // as we populated
+        }
+        const pdfBuffer = await generatePdf(invoiceData)
+
+        // uploading in cloudinary 
+        // using any for now 
+        const cloudinaryResult  = await uploadBufferToCloudinary(pdfBuffer, "invoice")
+        // console.log({cloudinaryResult})
+
+        if(!cloudinaryResult){
+            throw new AppError(401, "Error Uploading Pdf")
+        }
+
+        // update our booking 
+
+        await Payment.findByIdAndUpdate(updatedPayment._id, {invoiceUrl : cloudinaryResult.secure_url}, {runValidators:true, session})
+
+          await sendEmail({
+            to: (updatedBooking.user as unknown as IUser).email,
+            subject: "Your Booking Invoice",
+            templateName: "invoice",
+            templateData: invoiceData,
+            attachments: [
+                {
+                    filename: "invoice.pdf",
+                    content: pdfBuffer,
+                    contentType: "application/pdf"
+                }
+            ]
+        })
+
+
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: true, message: "Payment Completed Successfully" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+
+const getInvoiceDownloadUrl = async (paymentId: string) => {
+    const payment = await Payment.findById(paymentId)
+        .select("invoiceUrl")
+
+    if (!payment) {
+        throw new AppError(401, "Payment not found")
+    }
+
+    if (!payment.invoiceUrl) {
+        throw new AppError(401, "No invoice found")
+    }
+
+    return payment.invoiceUrl
+};
+
+
+export const PaymentService = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+    getInvoiceDownloadUrl
 };
 ```
