@@ -2,7 +2,7 @@
 import { envVars } from "../config/env"
 import { IAuthProvider, IUser, Role } from "../modules/user/user.interface"
 import { User } from "../modules/user/user.model"
-import bcrypt from 'bcryptjs';
+import bcryptjs from 'bcryptjs';
 
 export const seedSuperAdmin = async () => {
     try {
@@ -12,7 +12,7 @@ export const seedSuperAdmin = async () => {
             return
         }
         console.log("Trying To Create Super Admin")
-        const hashedPassword = await bcrypt.hash(envVars.SUPER_ADMIN_PASSWORD, Number(envVars.BCRYPT_SALT_ROUND))
+        const hashedPassword = await bcryptjs.hash(envVars.SUPER_ADMIN_PASSWORD, Number(envVars.BCRYPT_SALT_ROUND))
         const authProvider: IAuthProvider = {
             provider: "credentials",
             providerId: envVars.SUPER_ADMIN_EMAIL

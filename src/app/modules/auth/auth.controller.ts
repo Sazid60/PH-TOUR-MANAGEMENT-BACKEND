@@ -8,7 +8,6 @@ import { AuthServices } from "./auth.service";
 import { catchAsync } from "../../utils/catchAsync";
 import AppError from "../../errorHelpers/AppError";
 import { setAuthCookie } from "../../utils/setCookie";
-import bcrypt from 'bcryptjs';
 import { JwtPayload } from "jsonwebtoken";
 import { createUserToken } from "../../utils/userToken";
 import { envVars } from "../../config/env";
@@ -177,6 +176,8 @@ const setPassword = catchAsync(async (req: Request, res: Response, next: NextFun
 const forgotPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     const { email } = req.body
 
+    console.log(email)
+
     await AuthServices.forgotPassword(email)
 
 
@@ -190,7 +191,7 @@ const forgotPassword = catchAsync(async (req: Request, res: Response, next: Next
 })
 
 const resetPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-    const { newPassword, id } = req.body
+    // const { newPassword, id } = req.body
     const decodedToken = req.user
 
     await AuthServices.resetPassword(req.body, decodedToken as JwtPayload)
