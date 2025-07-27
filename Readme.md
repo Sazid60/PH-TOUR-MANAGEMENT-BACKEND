@@ -1878,3 +1878,11 @@ export const StatsService = {
 }
 ```
 - added up to user and tour stats
+
+## 33-11 Creating Dashboard Analytics API, Booking Stats
+
+- stats.service.ts 
+
+```ts
+
+```
