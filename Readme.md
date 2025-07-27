@@ -1544,3 +1544,159 @@ app.use(notFound)
 
 export default app
 ```
+
+## 33-8 Creating Dashboard Analytics API, User Stats
+- from now we will work on mongoose aggregation 
+- lets see all in next module 
+
+
+## 33-9 Creating Dashboard Analytics API, Tour Stats and 33-10 Complete Tour Stats API
+
+- stat.route.ts
+
+```ts
+import express from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "../user/user.interface";
+import { StatsController } from "./stats.controller";
+
+const router = express.Router();
+
+router.get(
+    "/booking",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    StatsController.getBookingStats
+);
+router.get(
+    "/payment",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    StatsController.getPaymentStats
+);
+router.get(
+    "/user",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    StatsController.getUserStats
+);
+router.get(
+    "/tour",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    StatsController.getTourStats
+);
+
+export const StatsRoutes = router;
+```
+
+- stat.controller.ts 
+
+```ts 
+// controllers/stats.controller.ts
+import { Request, Response } from "express";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { StatsService } from "./stats.service";
+
+const getBookingStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getBookingStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Booking stats fetched successfully",
+        data: stats,
+    });
+});
+
+const getPaymentStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getPaymentStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Payment stats fetched successfully",
+        data: stats,
+    });
+});
+
+const getUserStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getUserStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "User stats fetched successfully",
+        data: stats,
+    });
+});
+
+const getTourStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getTourStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Tour stats fetched successfully",
+        data: stats,
+    });
+});
+
+export const StatsController = {
+    getBookingStats,
+    getPaymentStats,
+    getUserStats,
+    getTourStats,
+};
+```
+
+- stat.service.ts 
+
+```ts
+// controllers/stats.controller.ts
+import { Request, Response } from "express";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { StatsService } from "./stats.service";
+
+const getBookingStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getBookingStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Booking stats fetched successfully",
+        data: stats,
+    });
+});
+
+const getPaymentStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getPaymentStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Payment stats fetched successfully",
+        data: stats,
+    });
+});
+
+const getUserStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getUserStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "User stats fetched successfully",
+        data: stats,
+    });
+});
+
+const getTourStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getTourStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Tour stats fetched successfully",
+        data: stats,
+    });
+});
+
+export const StatsController = {
+    getBookingStats,
+    getPaymentStats,
+    getUserStats,
+    getTourStats,
+};
+```
+- added up to user and tour stats
