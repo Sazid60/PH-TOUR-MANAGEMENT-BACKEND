@@ -2579,3 +2579,165 @@ export const StatsService = {
     getUserStats
 }
 ```
+
+## 33-13 Validate the Payment with SSLCommerz
+
+- we have work left over SSLCOMERZ. 
+- when payment is successful it will call the IPN url we have set. which is a backend url post request and will pass us val_id and then we will give the val_id to their another post request. in response sslcomerze will give us Paymentgetway data and we will update it inside the payment collection.
+- There was a problem that we can not implement this or we can not set the IPN as local host. project must be deployed.
+- the flow will be like after successful payment the IPN url (post method made by us for our backend) will be automatically called and then inside the url validate payment function will be called 
+
+- sslCommerz.service.ts 
+
+```ts
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import axios from "axios"
+import httpStatus from "http-status-codes"
+import { envVars } from "../../config/env"
+import AppError from "../../errorHelpers/AppError"
+import { ISSLCommerz } from "./sslCommerz.interface"
+import { Payment } from "../payment/payment.model"
+
+const sslPaymentInit = async (payload: ISSLCommerz) => {
+
+    try {
+        const data = {
+            store_id: envVars.SSL.STORE_ID,
+            store_passwd: envVars.SSL.STORE_PASS,
+            total_amount: payload.amount,
+            currency: "BDT",
+            tran_id: payload.transactionId,
+            success_url: `${envVars.SSL.SSL_SUCCESS_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=success`, //takes to default post 
+            fail_url: `${envVars.SSL.SSL_FAIL_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=fail`, //takes to default post 
+            cancel_url: `${envVars.SSL.SSL_CANCEL_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=cancel`, //takes to default post 
+            ipn_url: envVars.SSL.SSL_IPN_URL, // added for payment validation
+            shipping_method: "N/A",
+            product_name: "Tour",
+            product_category: "Service",
+            product_profile: "general",
+            cus_name: payload.name,
+            cus_email: payload.email,
+            cus_add1: payload.address,
+            cus_add2: "N/A",
+            cus_city: "Dhaka",
+            cus_state: "Dhaka",
+            cus_postcode: "1000",
+            cus_country: "Bangladesh",
+            cus_phone: payload.phoneNumber,
+            cus_fax: "01711111111",
+            ship_name: "N/A",
+            ship_add1: "N/A",
+            ship_add2: "N/A",
+            ship_city: "N/A",
+            ship_state: "N/A",
+            ship_postcode: 1000,
+            ship_country: "N/A",
+        }
+
+        const response = await axios({
+            method: "POST",
+            url: envVars.SSL.SSL_PAYMENT_API,
+            data: data,
+            headers: { "Content-Type": "application/x-www-form-urlencoded" }
+        })
+
+        return response.data;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+        console.log("Payment Error Occured", error);
+        throw new AppError(httpStatus.BAD_REQUEST, error.message)
+    }
+}
+
+
+//_____________________Validate the payment function
+// this function will be called in a post method backend api. 
+// the flow will be like after successful payment the IPN url (post method made by us for our backend) will be automatically called and then inside the url validate payment function will be called 
+const validatePayment = async (payload: any) => {
+    try {
+        const response = await axios({
+            method: "GET",
+            url: `${envVars.SSL.SSL_VALIDATION_API}?val_id=${payload.val_id}&store_id=${envVars.SSL.STORE_ID}&store_passwd=${envVars.SSL.STORE_PASS}`
+        })
+
+        console.log("sslcomeerz validate api response", response.data);
+
+        await Payment.updateOne(
+            { transactionId: payload.tran_id },
+            { paymentGatewayData: response.data },
+            { runValidators: true })
+    } catch (error: any) {
+        console.log(error);
+        throw new AppError(401, `Payment Validation Error, ${error.message}`)
+    }
+}
+
+export const SSLService = {
+    sslPaymentInit,
+    validatePayment
+}
+```
+
+- There will be payment post route (will be hit by the ssl commerze). When ssl comerze will hit this post route it will give some data or parameter inside the body and using the body parameter our validate payment function will be hit 
+
+- payment.route.ts
+
+```ts
+import express from "express";
+import { PaymentController } from "./payment.controller";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "../user/user.interface";
+
+
+const router = express.Router();
+
+
+router.post("/init-payment/:bookingId", PaymentController.initPayment);
+router.post("/success", PaymentController.successPayment);
+router.post("/fail", PaymentController.failPayment);
+router.post("/cancel", PaymentController.cancelPayment);
+router.get("/invoice/:paymentId", checkAuth(...Object.values(Role)), PaymentController.getInvoiceDownloadUrl);
+
+// for ssl commerz payment validation
+router.post("/validate-payment", PaymentController.validatePayment)
+
+export const PaymentRoutes = router;
+```
+
+- payment.controller.ts 
+
+```ts
+import { Request, Response } from "express";
+import { envVars } from "../../config/env";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { PaymentService } from "./payment.service";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+
+//validate the payment
+
+const validatePayment = catchAsync(
+    async (req: Request, res: Response) => {
+        console.log("sslcommerz ipn url body", req.body);
+        await SSLService.validatePayment(req.body)
+        sendResponse(res, {
+            statusCode: 200,
+            success: true,
+            message: "Payment Validated Successfully",
+            data: null,
+        });
+    }
+);
+
+export const PaymentController = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+    getInvoiceDownloadUrl,
+    validatePayment
+};
+```
+
+- we have directly called the SSLService so we do not need to create payment service for validating payment
