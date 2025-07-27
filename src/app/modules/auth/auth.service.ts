@@ -14,12 +14,6 @@ import { sendEmail } from '../../utils/sendEmail';
 import bcryptjs from 'bcryptjs';
 
 
-
-
-
-
-
-
 // const credentialsLogin = async (payload: Partial<IUser>) => {
 //     const { email, password } = payload
 
