@@ -1353,7 +1353,7 @@ import AppError from "../../errorHelpers/AppError";
 import { IAuthProvider, IUser, Role } from "./user.interface";
 import { User } from "./user.model";
 import httpStatus from 'http-status-codes';
-import bcrypt from "bcryptjs";
+import bcryptjs from "bcryptjs";
 import { JwtPayload } from "jsonwebtoken";
 // import { envVars } from "../../config/env";
 import { QueryBuilder } from "../../utils/QueryBuilder";
@@ -1369,8 +1369,8 @@ const createUser = async (payload: Partial<IUser>) => {
         throw new AppError(httpStatus.BAD_REQUEST, "User Already Exists")
     }
 
-    const hashedPassword = await bcrypt.hash(password as string, 10)
-    // const isPasswordMatch = await bcrypt.compare("password as string", hashedPassword) //compares password 
+    const hashedPassword = await bcryptjs.hash(password as string, 10)
+    // const isPasswordMatch = await bcryptjs.compare("password as string", hashedPassword) //compares password 
 
 
 
@@ -1460,7 +1460,7 @@ const updateUser = async (userId: string, payload: Partial<IUser>, decodedToken:
     // new update 
 
     // if (payload.password) {
-    //     payload.password = await bcrypt.hash(payload.password, envVars.BCRYPT_SALT_ROUND)
+    //     payload.password = await bcryptjs.hash(payload.password, envVars.bcryptjs_SALT_ROUND)
     // }
 
     const newUpdatedUser = await User.findByIdAndUpdate(userId, payload, { new: true, runValidators: true })
@@ -2741,3 +2741,168 @@ export const PaymentController = {
 ```
 
 - we have directly called the SSLService so we do not need to create payment service for validating payment
+
+## 33-14 Deploy The Backend in Vercel
+- create a file in the root named vercel.json
+
+
+```json
+{
+    "version": 2,
+    "builds": [
+        {
+            "src": "dist/server.js",
+            "use": "@vercel/node"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/(.*)",
+            "dest": "dist/server.js"
+        }
+    ]
+}
+```
+
+- update the package.json
+
+```json
+  "scripts": {
+     "start": "node ./dist/server.js",
+    "dev": "ts-node-dev --respawn --transpile-only ./src/server.ts",
+    "build" : "tsc",
+    "lint": "npx eslint ./src",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+```
+
+- build the ts files to js file 
+
+```
+npm run build
+```
+- remember  the ejs files or other files except ts files needs to be pasted in dist folder since ts compiler ignores the files except ts files 
+
+- install the vercel 
+
+```
+npm i -g vercel 
+```
+
+- vercel login 
+
+```
+vercel login
+```
+
+- deploy 
+
+```
+ vercel --prod
+```
+- if dependency error for cloudinary overwrite the install command in vercel 
+- update the tsc command as installation error coming 
+```js
+  "scripts": {
+    "start": "node ./dist/server.js",
+    "dev": "ts-node-dev --respawn --transpile-only ./src/server.ts",
+    "build": "npm install  --force && tsc",
+    "lint": "npx eslint ./src",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+```
+- update in vercel as well 
+
+![alt text](image-6.png)
+
+- still stuck in the problem? 
+
+- main problem is cloudinary we will just manual tell cloudinary that you should be the expected version because multe3r-cloudinary-store do not support the installed version of cloudinary. we will just manually  insert the required version of cloudinary for that.  
+
+- package.json 
+
+```json
+    "cloudinary": "^1.41.3",
+```
+
+- now fresh start
+- delete the node modules 
+
+```
+rm -rf node_modules  
+```
+- install the npm 
+
+```
+npm install
+```
+
+- build the project 
+
+```
+npm run build
+```
+- re deploy 
+
+```
+vercel --prod
+```
+
+#### Now Time To Set The Ipn Url to ssl commerz
+
+![alt text](image-7.png)
+
+- change the env backend url to the deployed url 
+
+
+#### Update in utils ->  setCookie.ts 
+
+```ts
+import { Response } from "express";
+import { envVars } from "../config/env";
+interface AuthToken {
+    accessToken?: string,
+    refreshToken?: string
+
+}
+export const setAuthCookie = (res: Response, tokenInfo: AuthToken) => {
+    if (tokenInfo.accessToken) {
+        res.cookie("accessToken", tokenInfo.accessToken,
+            {
+                httpOnly: true,
+                secure: envVars.NODE_ENV === "production",
+                // secure will be false as we were working in localhost 
+                // for deployed project we will keep the secure true
+                sameSite : "none", // for setting the cookie in live link frontend
+            }
+        )
+    }
+    if (tokenInfo.refreshToken) {
+        res.cookie("refreshToken", tokenInfo.refreshToken,
+            {
+                httpOnly: true,
+                secure: envVars.NODE_ENV === "production",
+                // secure will be false as we were working in localhost 
+                // for deployed project we will keep the secure true
+                sameSite : "none", // for setting the cookie in live link frontend
+            }
+        )
+    }
+}
+```
+
+#### Update In app.ts ------ Cors 
+- beside the cors we have to set a proxy 
+```ts 
+app.set("trust proxy", 1) // this means it will trust the external live links proxy 
+
+app.use(cors({
+    origin : envVars.FRONTEND_URL,
+    credentials : true //have to use this for setting the token in cookies 
+}))
+```
+- update google console oAuth consent Screen urls with backend url 
+
+![alt text](image-8.png)
+
+- here the token is not set in frontend url after google login because we have to set this from frontend because backend became live link 

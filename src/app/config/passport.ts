@@ -6,7 +6,9 @@ import { User } from "../modules/user/user.model";
 import { IsActive, Role } from "../modules/user/user.interface";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
-import bcrypt from 'bcryptjs';
+import bcryptjs from 'bcryptjs';
+
+
 
 
 
@@ -50,7 +52,7 @@ passport.use(
                     return done(null, false, { message: "You have authenticated through Google. So if you want to login with credentials, then at first login with google and set a password for your Gmail and then you can login with email and password." })
                 }
 
-                const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+                const isPasswordMatch = await bcryptjs.compare(password as string, isUserExist.password as string)
 
                 if (!isPasswordMatch) {
                     return done(null, false, { message: "Password Does Not Match" })

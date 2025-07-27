@@ -5,13 +5,13 @@ import AppError from '../../errorHelpers/AppError';
 import { IAuthProvider, IsActive, IUser } from "../user/user.interface"
 import httpStatus from 'http-status-codes';
 import { User } from "../user/user.model";
-import bcrypt from "bcryptjs";
 import { generateToken, verifyToken } from "../../utils/jwt";
 import { envVars } from '../../config/env';
 import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
 import { JwtPayload } from "jsonwebtoken";
 import jwt from 'jsonwebtoken';
 import { sendEmail } from '../../utils/sendEmail';
+import bcryptjs from 'bcryptjs';
 
 
 // const credentialsLogin = async (payload: Partial<IUser>) => {
@@ -22,7 +22,7 @@ import { sendEmail } from '../../utils/sendEmail';
 //         throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
 //     }
 
-//     const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+//     const isPasswordMatch = await bcryptjs.compare(password as string, isUserExist.password as string)
 
 //     if (!isPasswordMatch) {
 //         throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
@@ -90,12 +90,12 @@ const changePassword = async (oldPassword: string, newPassword: string, decodedT
 
     const user = await User.findById(decodedToken.userId)
 
-    const isOldPasswordMatch = await bcrypt.compare(oldPassword, user!.password as string)
+    const isOldPasswordMatch = await bcryptjs.compare(oldPassword, user!.password as string)
     if (!isOldPasswordMatch) {
         throw new AppError(httpStatus.UNAUTHORIZED, "Old Password does not match");
     }
 
-    user!.password = await bcrypt.hash(newPassword, Number(envVars.BCRYPT_SALT_ROUND))
+    user!.password = await bcryptjs.hash(newPassword, Number(envVars.BCRYPT_SALT_ROUND))
 
     user!.save();
 
@@ -116,7 +116,7 @@ const setPassword = async (userId: string, plainPassword: string) => {
     // .some() checks if at least one item in the array satisfies the given condition.
     // "Is there any object in the auths array where the provider is "google"?"
 
-    const hashedPassword = await bcrypt.hash(
+    const hashedPassword = await bcryptjs.hash(
         plainPassword,
         Number(envVars.BCRYPT_SALT_ROUND)
     )
@@ -136,21 +136,19 @@ const setPassword = async (userId: string, plainPassword: string) => {
 
 }
 const forgotPassword = async (email: string) => {
-    const isUserExist = await User.findOne({ email })
+    const isUserExist = await User.findOne({ email });
 
     if (!isUserExist) {
-        throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+        throw new AppError(httpStatus.BAD_REQUEST, "User does not exist")
     }
-
     if (!isUserExist.isVerified) {
         throw new AppError(httpStatus.BAD_REQUEST, "User is not verified")
     }
-
     if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
-        throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+        throw new AppError(httpStatus.BAD_REQUEST, `User is ${isUserExist.isActive}`)
     }
     if (isUserExist.isDeleted) {
-        throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+        throw new AppError(httpStatus.BAD_REQUEST, "User is deleted")
     }
 
     const jwtPayload = {
@@ -165,7 +163,7 @@ const forgotPassword = async (email: string) => {
 
     const resetUILink = `${envVars.FRONTEND_URL}/reset-password?id=${isUserExist._id}&token=${resetToken}`
 
-    sendEmail({
+    await sendEmail({
         to: isUserExist.email,
         subject: "Password Reset",
         templateName: "forgetPassword",
@@ -174,9 +172,7 @@ const forgotPassword = async (email: string) => {
             resetUILink
         }
     })
-
 }
-
 const resetPassword = async (payload: Record<string, any>, decodedToken: JwtPayload) => {
     if (payload.id != decodedToken.userId) {
         throw new AppError(401, "You can not reset your password")
@@ -187,7 +183,7 @@ const resetPassword = async (payload: Record<string, any>, decodedToken: JwtPayl
         throw new AppError(401, "User does not exist")
     }
 
-    const hashedPassword = await bcrypt.hash(
+    const hashedPassword = await bcryptjs.hash(
         payload.newPassword,
         Number(envVars.BCRYPT_SALT_ROUND)
     )

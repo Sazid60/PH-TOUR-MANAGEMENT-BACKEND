@@ -25,7 +25,10 @@ app.use(passport.session()) // This tells Passport to use sessions to store logi
 
 app.use(cookieParser()) // cookie parser added
 app.use(express.json())
+app.set("trust proxy", 1) // this means it will trust the external live links proxy 
 app.use(express.urlencoded({ extended: true })) // for multer upload
+
+// 
 app.use(cors({
     origin : envVars.FRONTEND_URL,
     credentials : true //have to use this for setting the token in cookies 

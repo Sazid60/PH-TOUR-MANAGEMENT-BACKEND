@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { envVars } from "../config/env";
 interface AuthToken {
     accessToken?: string,
     refreshToken?: string
@@ -9,7 +10,10 @@ export const setAuthCookie = (res: Response, tokenInfo: AuthToken) => {
         res.cookie("accessToken", tokenInfo.accessToken,
             {
                 httpOnly: true,
-                secure: false
+                secure: envVars.NODE_ENV === "production",
+                // secure will be false as we were working in localhost 
+                // for deployed project we will keep the secure true
+                sameSite : "none", // for setting the cookie in live link frontend
             }
         )
     }
@@ -17,7 +21,10 @@ export const setAuthCookie = (res: Response, tokenInfo: AuthToken) => {
         res.cookie("refreshToken", tokenInfo.refreshToken,
             {
                 httpOnly: true,
-                secure: false
+                secure: envVars.NODE_ENV === "production",
+                // secure will be false as we were working in localhost 
+                // for deployed project we will keep the secure true
+                sameSite : "none", // for setting the cookie in live link frontend
             }
         )
     }
