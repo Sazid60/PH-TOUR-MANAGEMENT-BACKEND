@@ -167,7 +167,7 @@ const getTourStats = async () => {
                 pipeline: [
                     {
                         $match: {
-                            $expr: { $eq: ["$_id", "$$tourId"] }
+                            $expr: { $eq: ["$_id", "$$tourId"] }  //tour collection _id booking collection tourId
                         }
                     }
                 ],
