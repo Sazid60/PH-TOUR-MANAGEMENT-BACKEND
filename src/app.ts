@@ -26,7 +26,10 @@ app.use(passport.session()) // This tells Passport to use sessions to store logi
 app.use(cookieParser()) // cookie parser added
 app.use(express.json())
 app.use(express.urlencoded({ extended: true })) // for multer upload
-app.use(cors())
+app.use(cors({
+    origin : envVars.FRONTEND_URL,
+    credentials : true //have to use this for setting the token in cookies 
+}))
 
 app.get("/", (req: Request, res: Response) => {
     res.status(200).json({

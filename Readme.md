@@ -1229,3 +1229,318 @@ export const PaymentService = {
     getInvoiceDownloadUrl
 };
 ```
+
+## 33-7 Refactoring User APIs, Configuring CORS for Frontend
+
+- update user.route.ts 
+
+```ts 
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema, updateUserZodSchema } from "./user.validation";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "./user.interface";
+
+
+
+const router = Router()
+
+
+
+router.get("/all-users", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getAllUsers)
+
+router.get("/me", checkAuth(...Object.values(Role)), userControllers.getMe)
+
+router.post("/register",
+    validateRequest(createUserZodSchema),
+    userControllers.createUser)
+
+router.patch("/:id", validateRequest(updateUserZodSchema), checkAuth(...Object.values(Role)), userControllers.updateUser)
+router.get("/:id",checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getSingleUser)
+
+export const UserRoutes = router
+```
+- updated user.validation.ts 
+
+```ts 
+import z from "zod";
+import { IsActive, Role } from "./user.interface";
+
+export const createUserZodSchema = z.object({
+    name: z
+        .string({ invalid_type_error: "Name must be string" })
+        .min(2, { message: "Name must be at least 2 characters long." })
+        .max(50, { message: "Name cannot exceed 50 characters." }),
+    email: z
+        .string({ invalid_type_error: "Email must be string" })
+        .email({ message: "Invalid email address format." })
+        .min(5, { message: "Email must be at least 5 characters long." })
+        .max(100, { message: "Email cannot exceed 100 characters." }),
+    password: z
+        .string({ invalid_type_error: "Password must be string" })
+        .min(8, { message: "Password must be at least 8 characters long." })
+        .regex(/^(?=.*[A-Z])/, {
+            message: "Password must contain at least 1 uppercase letter.",
+        })
+        .regex(/^(?=.*[!@#$%^&*])/, {
+            message: "Password must contain at least 1 special character.",
+        })
+        .regex(/^(?=.*\d)/, {
+            message: "Password must contain at least 1 number.",
+        }),
+    phone: z
+        .string({ invalid_type_error: "Phone Number must be string" })
+        .regex(/^(?:\+8801\d{9}|01\d{9})$/, {
+            message: "Phone number must be valid for Bangladesh. Format: +8801XXXXXXXXX or 01XXXXXXXXX",
+        })
+        .optional(),
+    address: z
+        .string({ invalid_type_error: "Address must be string" })
+        .max(200, { message: "Address cannot exceed 200 characters." })
+        .optional()
+})
+
+export const updateUserZodSchema = z.object({
+    name: z
+        .string({ invalid_type_error: "Name must be string" })
+        .min(2, { message: "Name must be at least 2 characters long." })
+        .max(50, { message: "Name cannot exceed 50 characters." }).optional(),
+    // password: z
+    //     .string({ invalid_type_error: "Password must be string" })
+    //     .min(8, { message: "Password must be at least 8 characters long." })
+    //     .regex(/^(?=.*[A-Z])/, {
+    //         message: "Password must contain at least 1 uppercase letter.",
+    //     })
+    //     .regex(/^(?=.*[!@#$%^&*])/, {
+    //         message: "Password must contain at least 1 special character.",
+    //     })
+    //     .regex(/^(?=.*\d)/, {
+    //         message: "Password must contain at least 1 number.",
+    //     }).optional(),
+    phone: z
+        .string({ invalid_type_error: "Phone Number must be string" })
+        .regex(/^(?:\+8801\d{9}|01\d{9})$/, {
+            message: "Phone number must be valid for Bangladesh. Format: +8801XXXXXXXXX or 01XXXXXXXXX",
+        })
+        .optional(),
+    role: z
+        // .enum(["ADMIN", "GUIDE", "USER", "SUPER_ADMIN"])
+        .enum(Object.values(Role) as [string])
+        .optional(),
+    isActive: z
+        .enum(Object.values(IsActive) as [string])
+        .optional(),
+    isDeleted: z
+        .boolean({ invalid_type_error: "isDeleted must be true or false" })
+        .optional(),
+    isVerified: z
+        .boolean({ invalid_type_error: "isVerified must be true or false" })
+        .optional(),
+    address: z
+        .string({ invalid_type_error: "Address must be string" })
+        .max(200, { message: "Address cannot exceed 200 characters." })
+        .optional()
+})
+```
+
+- updated user.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError";
+import { IAuthProvider, IUser, Role } from "./user.interface";
+import { User } from "./user.model";
+import httpStatus from 'http-status-codes';
+import bcrypt from "bcryptjs";
+import { JwtPayload } from "jsonwebtoken";
+// import { envVars } from "../../config/env";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { userSearchableFields } from "./user.constant";
+
+const createUser = async (payload: Partial<IUser>) => {
+
+    const { email, password, ...rest } = payload
+
+    const isUserExist = await User.findOne({ email })
+
+    if (isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Already Exists")
+    }
+
+    const hashedPassword = await bcrypt.hash(password as string, 10)
+    // const isPasswordMatch = await bcrypt.compare("password as string", hashedPassword) //compares password 
+
+
+
+    // // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // const authProvider: IAuthProvider = {provider : "credentials", providerId : email!}
+
+
+    const authProvider: IAuthProvider = { provider: "credentials", providerId: email as string }
+
+    const user = await User.create({
+        email,
+        password: hashedPassword,
+        auths: [authProvider],
+        ...rest
+    })
+
+    return user
+}
+
+const getAllUsers = async (query: Record<string, string>) => {
+
+    const queryBuilder = new QueryBuilder(User.find(), query)
+    const usersData = queryBuilder
+        .filter()
+        .search(userSearchableFields)
+        .sort()
+        .fields()
+        .paginate();
+
+    const [data, meta] = await Promise.all([
+        usersData.build(),
+        queryBuilder.getMeta()
+    ])
+
+    return {
+        data,
+        meta
+    }
+};
+// update User 
+
+const updateUser = async (userId: string, payload: Partial<IUser>, decodedToken: JwtPayload) => {
+
+    const ifUserExist = await User.findById(userId);
+
+    // new
+    if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+        if (userId !== decodedToken.userId) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are unauthorized to update another user's profile");
+        }
+    }
+
+    if (!ifUserExist) {
+        throw new AppError(httpStatus.NOT_FOUND, "User Not Found")
+    }
+
+    // new
+    if (decodedToken.role === Role.ADMIN && ifUserExist.role === Role.SUPER_ADMIN) {
+        throw new AppError(httpStatus.FORBIDDEN, "You are not authorized to update a super admin profile");
+    }
+
+    /**
+     * email - can not update
+     * name, phone, password address
+     * password - re hashing
+     *  only admin superadmin - role, isDeleted...
+     * 
+     * promoting to superadmin - superadmin
+     */
+
+    if (payload.role) {
+        if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+
+        // if (payload.role === Role.SUPER_ADMIN && decodedToken.role === Role.ADMIN) {
+        //     throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        // }
+    }
+
+    if (payload.isActive || payload.isDeleted || payload.isVerified) {
+        if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+    }
+
+    // new update 
+
+    // if (payload.password) {
+    //     payload.password = await bcrypt.hash(payload.password, envVars.BCRYPT_SALT_ROUND)
+    // }
+
+    const newUpdatedUser = await User.findByIdAndUpdate(userId, payload, { new: true, runValidators: true })
+
+    return newUpdatedUser
+}
+
+const getSingleUser = async (id: string) => {
+    const user = await User.findById(id).select("-password");
+    return {
+        data: user
+    }
+};
+const getMe = async (userId: string) => {
+    const user = await User.findById(userId).select("-password");
+    return {
+        data: user
+    }
+};
+
+export const userServices = {
+    createUser,
+    getAllUsers,
+    updateUser,
+    getSingleUser,
+    getMe
+}
+```
+
+- updated for cors app.ts 
+
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
+import notFound from "./app/middlewares/notFound"
+import cookieParser from "cookie-parser"
+import passport from "passport"
+import expressSession from "express-session"
+
+import "./app/config/passport" //we have to let the app.ts know that passport.ts file exists 
+import { envVars } from "./app/config/env"
+
+const app = express()
+
+app.use(expressSession({
+    secret: envVars.EXPRESS_SESSION_SECRET,
+    resave: false, // Don’t save the session again if nothing changed.
+    saveUninitialized: false // Don’t create empty sessions for users who haven’t logged in yet.
+}))
+app.use(passport.initialize()) // This sets up Passport in your Express app.
+app.use(passport.session()) // This tells Passport to use sessions to store login info (so the user stays logged in between requests).
+
+app.use(cookieParser()) // cookie parser added
+app.use(express.json())
+app.use(express.urlencoded({ extended: true })) // for multer upload
+app.use(cors({
+    origin : envVars.FRONTEND_URL,
+    credentials : true //have to use this for setting the token in cookies 
+}))
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+app.use("/api/v1", router)
+
+// using the global error handler 
+app.use(globalErrorHandler)
+
+// Using not found route 
+app.use(notFound)
+
+
+
+export default app
+```
