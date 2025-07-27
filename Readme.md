@@ -2817,38 +2817,6 @@ vercel login
 
 - still stuck in the problem? 
 
-```
-PS D:\WORK\renew-level-2\PH-MODULES\Be-A-Industry-Standard-Maestro\PH-TOUR-MANAGEMENT-BACKEND-8> npm install
-npm error code ERESOLVE
-npm error ERESOLVE could not resolve
-npm error
-npm error While resolving: multer-storage-cloudinary@4.0.0
-npm error Found: cloudinary@2.7.0
-npm error node_modules/cloudinary
-npm error   cloudinary@"^2.7.0" from the root project
-npm error
-npm error Could not resolve dependency:
-npm error peer cloudinary@"^1.21.0" from multer-storage-cloudinary@4.0.0
-npm error node_modules/multer-storage-cloudinary
-npm error   multer-storage-cloudinary@"^4.0.0" from the root project
-npm error
-npm error Conflicting peer dependency: cloudinary@1.41.3
-npm error node_modules/cloudinary
-npm error   peer cloudinary@"^1.21.0" from multer-storage-cloudinary@4.0.0
-npm error   node_modules/multer-storage-cloudinary
-npm error     multer-storage-cloudinary@"^4.0.0" from the root project
-npm error
-npm error Fix the upstream dependency conflict, or retry
-npm error this command with --force or --legacy-peer-deps
-npm error to accept an incorrect (and potentially broken) dependency resolution.
-npm error
-npm error
-npm error For a full report see:
-npm error C:\Users\User\AppData\Local\npm-cache\_logs\2025-07-27T14_28_46_344Z-eresolve-report.txt
-npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2025-07-27T14_28_46_344Z-debug-0.log
-PS D:\WORK\renew-level-2\PH-MODULES\Be-A-Industry-Standard-Maestro\PH-TOUR-MANAGEMENT-BACKEND-8> 
-```
-
 - main problem is cloudinary we will just manual tell cloudinary that you should be the expected version because multe3r-cloudinary-store do not support the installed version of cloudinary. we will just manually  insert the required version of cloudinary for that.  
 
 - package.json 
