@@ -1,4 +1,11 @@
-node_modules
+# Ignore dependencies
+node_modules/
+
+# Ignore environment variables
 .env
-.vercel
-dist
+
+# Ignore Vercel config/build output
+.vercel/
+
+# Ignore build output folder
+dist/
