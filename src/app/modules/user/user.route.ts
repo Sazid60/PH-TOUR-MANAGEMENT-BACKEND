@@ -22,5 +22,6 @@ router.post("/register",
     userControllers.createUser)
 
 router.patch("/:id", validateRequest(updateUserZodSchema), checkAuth(...Object.values(Role)), userControllers.updateUser)
+router.get("/:id",checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getSingleUser)
 
 export const UserRoutes = router
