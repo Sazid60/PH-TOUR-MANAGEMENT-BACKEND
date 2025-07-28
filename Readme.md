@@ -2906,3 +2906,8 @@ app.use(cors({
 ![alt text](image-8.png)
 
 - here the token is not set in frontend url after google login because we have to set this from frontend because backend became live link 
+
+- for google login we will use `window.location.href="https://ph-tour-management-backend-8.vercel.app/api/v1/auth/google"` instead of using axios because of avoiding cors error. Th reason of the cors error is google wants to hit the link manually. 
+- for setting the cookie we have to hit a private route manually 
+
+![alt text](image-9.png)
