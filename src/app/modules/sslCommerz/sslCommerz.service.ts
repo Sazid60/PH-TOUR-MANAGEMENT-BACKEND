@@ -48,10 +48,12 @@ const sslPaymentInit = async (payload: ISSLCommerz) => {
             url: envVars.SSL.SSL_PAYMENT_API,
             data: data,
             headers: { "Content-Type": "application/x-www-form-urlencoded" }
+            // "application/x-www-form-urlencoded" means the data is being sent as URL-encoded form data (like traditional HTML forms), not JSON.
+            // This tells the server (SSLCommerz API) that the data you are sending is URL-encoded form data.
+            // "application/x-www-form-urlencoded" = sending form-style key=value&key=value data.
         })
 
         return response.data;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
         console.log("Payment Error Occured", error);
         throw new AppError(httpStatus.BAD_REQUEST, error.message)

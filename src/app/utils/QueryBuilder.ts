@@ -5,6 +5,11 @@ import { excludedFields } from "../constants";
 
 export class QueryBuilder<T> {
     public modelQuery: Query<T[], T>;
+// Query<TResult, TDoc> represents a query that will eventually return TResult documents from the database, which are of type TDoc.
+// So here:
+// T[] → The query will return an array of documents of type T.
+// T → The query is working with a model of type T.
+
     public readonly query: Record<string, string>
 
     constructor(modelQuery: Query<T[], T>, query: Record<string, string>) {
