@@ -91,19 +91,19 @@ const successPayment = async (query: Record<string, string>) => {
         const pdfBuffer = await generatePdf(invoiceData)
 
         // uploading in cloudinary 
-// using any for now 
-        const cloudinaryResult  = await uploadBufferToCloudinary(pdfBuffer, "invoice")
+        // using any for now 
+        const cloudinaryResult = await uploadBufferToCloudinary(pdfBuffer, "invoice")
         // console.log({cloudinaryResult})
 
-        if(!cloudinaryResult){
+        if (!cloudinaryResult) {
             throw new AppError(401, "Error Uploading Pdf")
         }
 
         // update our booking 
 
-        await Payment.findByIdAndUpdate(updatedPayment._id, {invoiceUrl : cloudinaryResult.secure_url}, {runValidators:true, session})
+        await Payment.findByIdAndUpdate(updatedPayment._id, { invoiceUrl: cloudinaryResult.secure_url }, { runValidators: true, session })
 
-          await sendEmail({
+        await sendEmail({
             to: (updatedBooking.user as unknown as IUser).email,
             subject: "Your Booking Invoice",
             templateName: "invoice",
